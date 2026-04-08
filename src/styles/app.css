@@ -7,11 +7,149 @@
 body {
   margin: 0;
   min-height: 100vh;
+  overflow: hidden;
 }
 
-.app-shell {
+button {
+  font: inherit;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.app-layout {
+  position: relative;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgb(255 255 255 / 45%), transparent 36%),
+    linear-gradient(180deg, #7ed7ff 0%, #b7f0ff 44%, #fff5bf 100%);
+}
+
+.camera-underlay,
+.game-canvas,
+.overlay-root {
+  position: absolute;
+  inset: 0;
+}
+
+.camera-underlay {
   display: grid;
   place-items: center;
+  color: rgb(19 34 56 / 68%);
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+}
+
+.camera-underlay p {
+  padding: 0.85rem 1.2rem;
+  border: 2px dashed rgb(19 34 56 / 20%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 40%);
+}
+
+.game-canvas {
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+
+.overlay-root {
+  pointer-events: none;
+}
+
+.overlay {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   min-height: 100vh;
-  gap: 0.75rem;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.hud,
+.screen {
+  pointer-events: auto;
+}
+
+.hud {
+  display: inline-flex;
+  align-self: flex-end;
+  gap: 0.85rem;
+  padding: 0.7rem 1rem;
+  border-radius: 999px;
+  background: rgb(19 34 56 / 74%);
+  color: #fffdf1;
+  backdrop-filter: blur(8px);
+  font-weight: 700;
+}
+
+.screen {
+  align-self: center;
+  display: grid;
+  justify-items: center;
+  gap: 0.85rem;
+  width: min(28rem, calc(100vw - 2rem));
+  padding: 1.6rem;
+  border-radius: 1.4rem;
+  background: rgb(255 253 241 / 78%);
+  box-shadow: 0 20px 60px rgb(19 34 56 / 18%);
+  text-align: center;
+}
+
+.screen-playing {
+  background: rgb(255 253 241 / 54%);
+}
+
+.screen-title {
+  margin: 0;
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  font-weight: 800;
+}
+
+.screen-copy {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.countdown {
+  margin: 0;
+  font-size: clamp(4rem, 14vw, 7rem);
+  font-weight: 900;
+  color: #ff6f61;
+  text-shadow: 0 8px 20px rgb(255 111 97 / 28%);
+}
+
+.screen-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.9rem 1.5rem;
+  background: linear-gradient(135deg, #ff7b54, #ffb547);
+  color: #132238;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 12px 30px rgb(255 123 84 / 30%);
+}
+
+.screen-button:hover {
+  transform: translateY(-1px);
+}
+
+.screen-button:active {
+  transform: translateY(1px);
+}
+
+@media (max-width: 640px) {
+  .overlay {
+    padding: 0.75rem;
+  }
+
+  .hud {
+    gap: 0.6rem;
+    font-size: 0.9rem;
+  }
+
+  .screen {
+    padding: 1.2rem;
+  }
 }
