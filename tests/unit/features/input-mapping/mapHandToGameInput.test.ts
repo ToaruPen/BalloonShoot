@@ -85,6 +85,37 @@ describe("mapHandToGameInput", () => {
     expect(third.shotFired).toBe(false);
   });
 
+  it("does not emit a shot on open -> pulled when gun pose is inactive", () => {
+    const nonGunOpen = mapHandToGameInput(
+      {
+        ...frame,
+        landmarks: {
+          ...frame.landmarks,
+          indexTip: { x: 0.5, y: 0.7, z: 0 },
+          thumbTip: { x: 0.34, y: 0.55, z: 0 }
+        }
+      },
+      { width: 1280, height: 720 },
+      undefined
+    );
+
+    const nonGunPulled = mapHandToGameInput(
+      {
+        ...frame,
+        landmarks: {
+          ...frame.landmarks,
+          indexTip: { x: 0.5, y: 0.7, z: 0 },
+          thumbTip: { x: 0.45, y: 0.62, z: 0 }
+        }
+      },
+      { width: 1280, height: 720 },
+      nonGunOpen.runtime
+    );
+
+    expect(nonGunOpen.shotFired).toBe(false);
+    expect(nonGunPulled.shotFired).toBe(false);
+  });
+
   it("clamps the mirrored crosshair to the canvas bounds", () => {
     const result = mapHandToGameInput(
       {
