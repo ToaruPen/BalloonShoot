@@ -61,6 +61,7 @@ jobs:
   e2e:
     name: e2e
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -70,3 +71,11 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          if-no-files-found: ignore
+          path: |
+            playwright-report
+            test-results

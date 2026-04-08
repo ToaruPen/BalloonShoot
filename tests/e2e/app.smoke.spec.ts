@@ -17,9 +17,14 @@ test("advances from camera prep to countdown", async ({ page }) => {
   await page.locator('button[data-action="camera"]').click();
 
   const startButton = page.locator('button[data-action="start"]');
+  const countdown = page.locator(".countdown");
   await expect(startButton).toHaveText("スタート");
   await expect(startButton).toBeVisible();
 
+  const before = (await countdown.count()) === 0 ? null : await countdown.textContent();
   await startButton.click();
-  await expect(page.locator(".countdown")).toHaveText(/\d/);
+  await expect
+    .poll(async () => ((await countdown.count()) === 0 ? null : await countdown.textContent()))
+    .not.toBe(before);
+  await expect(countdown).toHaveText(/^\d+$/);
 });
