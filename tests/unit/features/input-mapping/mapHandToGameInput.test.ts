@@ -42,7 +42,8 @@ describe("mapHandToGameInput", () => {
   it("keeps the smoother between the previous crosshair and the raw target", () => {
     const result = smoothCrosshair(
       { x: 640, y: 0 },
-      { x: 256, y: 0 }
+      { x: 256, y: 0 },
+      0.28
     );
 
     expect(result.x).toBeLessThan(640);
@@ -62,7 +63,7 @@ describe("mapHandToGameInput", () => {
         ...frame,
         landmarks: {
           ...frame.landmarks,
-          thumbTip: { x: 0.45, y: 0.62, z: 0 }
+          thumbTip: { x: 0.52, y: 0.62, z: 0 }
         }
       },
       { width: 1280, height: 720 },
@@ -73,7 +74,7 @@ describe("mapHandToGameInput", () => {
         ...frame,
         landmarks: {
           ...frame.landmarks,
-          thumbTip: { x: 0.45, y: 0.62, z: 0 }
+          thumbTip: { x: 0.52, y: 0.62, z: 0 }
         }
       },
       { width: 1280, height: 720 },
@@ -105,7 +106,7 @@ describe("mapHandToGameInput", () => {
         landmarks: {
           ...frame.landmarks,
           indexTip: { x: 0.5, y: 0.7, z: 0 },
-          thumbTip: { x: 0.45, y: 0.62, z: 0 }
+          thumbTip: { x: 0.52, y: 0.62, z: 0 }
         }
       },
       { width: 1280, height: 720 },
@@ -149,5 +150,43 @@ describe("mapHandToGameInput", () => {
 
     expect(second.crosshair.x).toBeLessThan(first.crosshair.x);
     expect(second.crosshair.x).toBeGreaterThan(256);
+  });
+
+  it("accepts runtime tuning values for smoothing and trigger hysteresis", () => {
+    const tuning = {
+      smoothingAlpha: 0.5,
+      triggerPullThreshold: 0.45,
+      triggerReleaseThreshold: 0.25
+    };
+    const first = mapHandToGameInput(frame, { width: 1280, height: 720 }, undefined, tuning);
+    const second = mapHandToGameInput(
+      {
+        ...frame,
+        landmarks: {
+          ...frame.landmarks,
+          indexTip: { x: 0.8, y: 0.2, z: 0 },
+          thumbTip: { x: 0.52, y: 0.62, z: 0 }
+        }
+      },
+      { width: 1280, height: 720 },
+      first.runtime,
+      tuning
+    );
+    const third = mapHandToGameInput(
+      {
+        ...frame,
+        landmarks: {
+          ...frame.landmarks,
+          thumbTip: { x: 0.46, y: 0.6, z: 0 }
+        }
+      },
+      { width: 1280, height: 720 },
+      second.runtime,
+      tuning
+    );
+
+    expect(second.crosshair.x).toBeCloseTo(448, 0);
+    expect(second.shotFired).toBe(true);
+    expect(third.triggerState).toBe("pulled");
   });
 });
