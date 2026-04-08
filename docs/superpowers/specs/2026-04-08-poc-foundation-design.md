@@ -293,6 +293,7 @@ PoC の時点で以下は `Phaser` 非依存に保つ。
 - ルート `AGENTS.md` は repo 全体に共通する事実だけを書く
 - 作業場所ごとの具体的な文脈は、そのディレクトリに置く scoped `AGENTS.md` に寄せる
 - すべての `AGENTS.md` と同階層に `CLAUDE.md` の symlink を置き、同一内容を参照させる
+- すべての `AGENTS.md` は英語で記述する
 - 内容は stateless に保ち、時期依存の TODO や個人メモは入れない
 - OpenAI / Anthropic のベストプラクティスに沿って `WHY / WHAT / HOW` と progressive disclosure を採用する
 - lint や style guide の細則は `AGENTS.md` に書かず、設定ファイルとコマンドに委ねる
