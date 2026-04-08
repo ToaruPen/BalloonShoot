@@ -85,6 +85,10 @@ export const registerShot = (engine: GameEngine, shot: ShotInput): void => {
   }
 
   const hitBalloon = engine.balloons.find((balloon) => {
+    if (!balloon.alive) {
+      return false;
+    }
+
     const dx = balloon.x - shot.x;
     const dy = balloon.y - shot.y;
 
