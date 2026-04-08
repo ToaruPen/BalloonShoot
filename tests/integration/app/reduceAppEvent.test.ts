@@ -24,6 +24,7 @@ describe("reduceAppEvent", () => {
 
     state = reduceAppEvent(state, { type: "CAMERA_READY" });
     state = reduceAppEvent(state, { type: "START_CLICKED" });
+    expect(state).toMatchObject({ screen: "countdown", countdown: 3 });
     state = reduceAppEvent(state, { type: "COUNTDOWN_TICK", secondsRemaining: 0 });
 
     expect(state.screen).toBe("playing");

@@ -16,7 +16,10 @@ describe("resolveOverlayAction", () => {
     };
     const childTarget: ActionElement = {
       dataset: {},
-      closest: () => actionElement
+      closest: (selector) => {
+        expect(selector).toBe("[data-action]");
+        return actionElement;
+      }
     };
     const overlayRoot = {
       contains: (value: unknown) => value === actionElement
@@ -33,7 +36,10 @@ describe("resolveOverlayAction", () => {
   it("ignores delegated elements outside the overlay root", () => {
     const foreignActionElement: ActionElement = {
       dataset: { action: "retry" },
-      closest: () => foreignActionElement
+      closest: (selector) => {
+        expect(selector).toBe("[data-action]");
+        return foreignActionElement;
+      }
     };
     const overlayRoot = {
       contains: () => false

@@ -175,10 +175,16 @@ export const startApp = (root: HTMLDivElement): void => {
     }
 
     if (event.type === "RETRY_CLICKED") {
+      const nextState = reduceAppEvent(state, event);
+
+      if (nextState === state) {
+        return;
+      }
+
       stopCountdown();
       stopGameLoop();
       engine = createGameEngine();
-      state = reduceAppEvent(state, event);
+      state = nextState;
       render();
       return;
     }
