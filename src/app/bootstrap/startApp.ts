@@ -133,7 +133,6 @@ export const startApp = (root: HTMLDivElement): void => {
 
   const startPlaying = (): void => {
     stopGameLoop();
-    lastFrameAtMs = undefined;
     syncScore();
     render();
     frameRequestId = window.requestAnimationFrame(tickGameLoop);
