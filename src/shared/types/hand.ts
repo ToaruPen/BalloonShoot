@@ -4,6 +4,11 @@ export interface Point3D {
   z: number;
 }
 
+/**
+ * Hand landmarks are normalized to the source frame.
+ * Origin is the top-left of the image, x increases to the right, y increases downward,
+ * and z follows the tracker depth convention where smaller values are closer to the camera.
+ */
 export interface HandFrame {
   width: number;
   height: number;
