@@ -271,5 +271,11 @@ describe("startApp camera recovery", () => {
 
     expect(createMediaPipeHandTrackerMock).toHaveBeenCalledTimes(2);
     expect(startBgm).toHaveBeenCalledTimes(1);
+
+    overlayRoot.click("start");
+    runNextAnimationFrame();
+    await flushPromises();
+
+    expect(startBgm).toHaveBeenCalledTimes(2);
   });
 });

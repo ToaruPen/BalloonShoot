@@ -77,4 +77,15 @@ describe("createMediaPipeHandTracker", () => {
       runningMode: "VIDEO"
     });
   });
+
+  it("returns undefined when no hands are detected", async () => {
+    createFromOptions.mockResolvedValueOnce({
+      detectForVideo: vi.fn(() => ({ landmarks: [] }))
+    });
+
+    const tracker = await createMediaPipeHandTracker();
+    const bitmap = { width: 640, height: 480 } as ImageBitmap;
+
+    await expect(tracker.detect(bitmap, 123)).resolves.toBeUndefined();
+  });
 });

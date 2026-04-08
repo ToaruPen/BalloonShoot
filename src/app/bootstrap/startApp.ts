@@ -280,6 +280,7 @@ export const startApp = (
           registerShot(engine, {
             x: input.crosshair.x,
             y: input.crosshair.y,
+            // `hit: true` opts this shot into collision detection inside the engine.
             hit: true
           });
 
