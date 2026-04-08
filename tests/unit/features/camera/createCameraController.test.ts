@@ -51,4 +51,45 @@ describe("createCameraController", () => {
 
     await expect(controller.requestStream()).rejects.toThrow("Camera API is unavailable");
   });
+
+  it("invalidates an in-flight request when stopped before getUserMedia resolves", async () => {
+    const staleTrackStop = vi.fn();
+    const staleStream = {
+      getTracks: () => [{ stop: staleTrackStop }]
+    } as unknown as MediaStream;
+    const replacementStream = {
+      getTracks: () => [{ stop: vi.fn() }]
+    } as unknown as MediaStream;
+
+    let resolveRequest: ((stream: MediaStream) => void) | undefined;
+    const getUserMedia = vi
+      .fn<() => Promise<MediaStream>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<MediaStream>((resolve) => {
+            resolveRequest = resolve;
+          })
+      )
+      .mockResolvedValueOnce(replacementStream);
+
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        mediaDevices: {
+          getUserMedia
+        }
+      }
+    });
+
+    const controller = createCameraController();
+    const staleRequest = controller.requestStream();
+
+    controller.stop();
+    resolveRequest?.(staleStream);
+
+    await expect(staleRequest).rejects.toThrow("cancelled");
+    expect(staleTrackStop).toHaveBeenCalledTimes(1);
+    await expect(controller.requestStream()).resolves.toBe(replacementStream);
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+  });
 });

@@ -1,9 +1,6 @@
 import { createAudioController, type AudioController } from "../../features/audio/createAudioController";
 import { createCameraController, type CameraController } from "../../features/camera/createCameraController";
-import {
-  createMediaPipeHandTracker,
-  toHandFrame
-} from "../../features/hand-tracking/createMediaPipeHandTracker";
+import { createMediaPipeHandTracker } from "../../features/hand-tracking/createMediaPipeHandTracker";
 import {
   mapHandToGameInput,
   type InputRuntimeState
@@ -172,6 +169,32 @@ export const startApp = (
     trackingFramePending = false;
   };
 
+  const logAudioPlaybackFailure = (label: string) => (error: unknown): void => {
+    console.error(`${label} playback failed`, error);
+  };
+
+  const handleCameraFailure = (error: unknown): void => {
+    stopCountdown();
+    stopTrackerLoop();
+    stopGameLoop();
+    audio?.stopBgm();
+    camera?.stop();
+    publishCameraFeedStream(undefined);
+    trackerPromise = undefined;
+    inputRuntime = undefined;
+    trackedCrosshair = undefined;
+    engine = createGameEngine();
+    state = createInitialAppState();
+    console.error("Camera startup failed", error);
+    render();
+  };
+
+  const getTrackerPromise = (): ReturnType<typeof createMediaPipeHandTracker> =>
+    (trackerPromise ??= createMediaPipeHandTracker().catch((error: unknown) => {
+      trackerPromise = undefined;
+      throw error;
+    }));
+
   const syncScore = (): void => {
     state = reduceAppEvent(state, {
       type: "SCORE_SYNC",
@@ -230,15 +253,11 @@ export const startApp = (
     try {
       trackingCapture ??= createImageCapture(stream);
 
-      const tracker = await (trackerPromise ??= createMediaPipeHandTracker());
+      const tracker = await getTrackerPromise();
       const bitmap = await trackingCapture.grabFrame();
 
       try {
-        const detection = tracker.detectForVideo(bitmap, frameAtMs);
-        const handFrame = toHandFrame(detection, {
-          width: bitmap.width,
-          height: bitmap.height
-        });
+        const handFrame = await tracker.detect(bitmap, frameAtMs);
 
         if (!handFrame) {
           return;
@@ -255,7 +274,7 @@ export const startApp = (
         trackedCrosshair = input.crosshair;
 
         if (input.shotFired) {
-          audio?.playShot();
+          void audio?.playShot().catch(logAudioPlaybackFailure("Shot"));
 
           const scoreBefore = engine.score;
           registerShot(engine, {
@@ -265,7 +284,7 @@ export const startApp = (
           });
 
           if (engine.score > scoreBefore) {
-            audio?.playHit();
+            void audio?.playHit().catch(logAudioPlaybackFailure("Hit"));
           }
 
           syncScore();
@@ -274,6 +293,8 @@ export const startApp = (
       } finally {
         bitmap.close();
       }
+    } catch (error) {
+      handleCameraFailure(error);
     } finally {
       trackingFramePending = false;
     }
@@ -292,8 +313,8 @@ export const startApp = (
   const handleTimeUp = (): void => {
     stopTrackerLoop();
     audio?.stopBgm();
-    audio?.playTimeout();
-    audio?.playResult();
+    void audio?.playTimeout().catch(logAudioPlaybackFailure("Timeout"));
+    void audio?.playResult().catch(logAudioPlaybackFailure("Result"));
     finishRound();
   };
 
@@ -398,13 +419,16 @@ export const startApp = (
     if (action === "camera") {
       audio ??= createAudioController();
       camera ??= createCameraController();
-      trackerPromise ??= createMediaPipeHandTracker();
+      void getTrackerPromise().catch(handleCameraFailure);
 
-      void camera.requestStream().then((stream) => {
-        trackingCapture = createImageCapture(stream);
-        publishCameraFeedStream(stream);
-        dispatch({ type: "CAMERA_READY" });
-      });
+      void camera
+        .requestStream()
+        .then((stream) => {
+          trackingCapture = createImageCapture(stream);
+          publishCameraFeedStream(stream);
+          dispatch({ type: "CAMERA_READY" });
+        })
+        .catch(handleCameraFailure);
       return;
     }
 

@@ -51,13 +51,13 @@ describe("createAudioController", () => {
     expect(bgm?.currentTime).toBe(0);
   });
 
-  it("creates dedicated one-shot players for every sound effect", () => {
+  it("creates dedicated one-shot players for every sound effect", async () => {
     const audio = createAudioController();
 
-    audio.playShot();
-    audio.playHit();
-    audio.playTimeout();
-    audio.playResult();
+    await audio.playShot();
+    await audio.playHit();
+    await audio.playTimeout();
+    await audio.playResult();
 
     const created = (globalThis as unknown as { __createdAudio: FakeAudioInstance[] }).__createdAudio;
     const effectSources = created.slice(1).map((instance) => instance.src);
@@ -71,5 +71,32 @@ describe("createAudioController", () => {
     created.slice(1).forEach((instance) => {
       expect(instance.play).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("surfaces one-shot playback failures to callers", async () => {
+    const blocked = new Error("autoplay blocked");
+
+    class RejectingAudio {
+      src: string;
+      loop = false;
+      currentTime = 0;
+      play = vi.fn(() =>
+        this.src === "/audio/shot.mp3" ? Promise.reject(blocked) : Promise.resolve(undefined)
+      );
+      pause = vi.fn(() => undefined);
+
+      constructor(src: string) {
+        this.src = src;
+      }
+    }
+
+    Object.defineProperty(globalThis, "Audio", {
+      configurable: true,
+      value: RejectingAudio
+    });
+
+    const audio = createAudioController();
+
+    await expect(audio.playShot()).rejects.toThrow("autoplay blocked");
   });
 });

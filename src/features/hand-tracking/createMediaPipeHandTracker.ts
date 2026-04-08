@@ -11,6 +11,10 @@ interface HandLandmarkerResultLike {
   landmarks: LandmarkLike[][];
 }
 
+export interface MediaPipeHandTracker {
+  detect(bitmap: ImageBitmap, frameAtMs: number): Promise<HandFrame | undefined>;
+}
+
 const HAND_LANDMARK_INDEX = {
   wrist: 0,
   thumbIp: 3,
@@ -31,7 +35,7 @@ const toPoint3D = (landmark: LandmarkLike | undefined): Point3D | undefined =>
       }
     : undefined;
 
-export const toHandFrame = (
+const toHandFrame = (
   result: HandLandmarkerResultLike,
   sourceSize: { width: number; height: number }
 ): HandFrame | undefined => {
@@ -76,14 +80,22 @@ export const toHandFrame = (
 const MEDIAPIPE_WASM_URL =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm";
 
-export const createMediaPipeHandTracker = async (): Promise<HandLandmarker> => {
+export const createMediaPipeHandTracker = async (): Promise<MediaPipeHandTracker> => {
   const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_URL);
-
-  return HandLandmarker.createFromOptions(vision, {
+  const handLandmarker = await HandLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath: "/models/hand_landmarker.task"
     },
     numHands: 1,
     runningMode: "VIDEO"
   });
+
+  return {
+    detect(bitmap: ImageBitmap, frameAtMs: number): Promise<HandFrame | undefined> {
+      return Promise.resolve(toHandFrame(handLandmarker.detectForVideo(bitmap, frameAtMs), {
+        width: bitmap.width,
+        height: bitmap.height
+      }));
+    }
+  };
 };

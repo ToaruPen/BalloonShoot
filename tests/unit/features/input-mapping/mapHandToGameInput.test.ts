@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { smoothCrosshair } from "../../../../src/features/input-mapping/createCrosshairSmoother";
 import { evaluateGunPose } from "../../../../src/features/input-mapping/evaluateGunPose";
 import { mapHandToGameInput } from "../../../../src/features/input-mapping/mapHandToGameInput";
+import { gameConfig } from "../../../../src/shared/config/gameConfig";
 import type { HandFrame } from "../../../../src/shared/types/hand";
 
 const frame: HandFrame = {
@@ -48,6 +49,21 @@ describe("mapHandToGameInput", () => {
 
     expect(result.x).toBeLessThan(640);
     expect(result.x).toBeGreaterThan(256);
+  });
+
+  it("clamps out-of-range smoothing alpha and falls back for NaN", () => {
+    expect(smoothCrosshair({ x: 100, y: 50 }, { x: 300, y: 250 }, 2)).toEqual({
+      x: 300,
+      y: 250
+    });
+    expect(smoothCrosshair({ x: 100, y: 50 }, { x: 300, y: 250 }, -1)).toEqual({
+      x: 100,
+      y: 50
+    });
+    expect(smoothCrosshair({ x: 100, y: 50 }, { x: 300, y: 250 }, Number.NaN)).toEqual({
+      x: 100 + (300 - 100) * gameConfig.input.smoothingAlpha,
+      y: 50 + (250 - 50) * gameConfig.input.smoothingAlpha
+    });
   });
 
   it("maps the index finger to mirrored canvas coordinates", () => {

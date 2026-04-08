@@ -8,6 +8,7 @@ export interface CameraController {
 export const createCameraController = (): CameraController => {
   let stream: MediaStream | undefined;
   let streamRequest: Promise<MediaStream> | undefined;
+  let generation = 0;
 
   return {
     async requestStream(): Promise<MediaStream> {
@@ -31,7 +32,8 @@ export const createCameraController = (): CameraController => {
         throw new Error("Camera API is unavailable");
       }
 
-      streamRequest = mediaDevices
+      const requestGeneration = ++generation;
+      const request = mediaDevices
         .getUserMedia({
           video: {
             width: gameConfig.camera.width,
@@ -41,16 +43,29 @@ export const createCameraController = (): CameraController => {
           audio: false
         })
         .then((nextStream) => {
+          if (requestGeneration !== generation) {
+            nextStream.getTracks().forEach((track) => {
+              track.stop();
+            });
+            throw new Error("Camera request cancelled");
+          }
+
           stream = nextStream;
           return nextStream;
         })
         .finally(() => {
-          streamRequest = undefined;
+          if (streamRequest === request) {
+            streamRequest = undefined;
+          }
         });
+      streamRequest = request;
 
-      return streamRequest;
+      return request;
     },
     stop(): void {
+      generation += 1;
+      streamRequest = undefined;
+
       if (!stream) {
         return;
       }

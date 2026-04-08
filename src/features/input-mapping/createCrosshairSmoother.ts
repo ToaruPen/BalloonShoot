@@ -14,8 +14,12 @@ export const smoothCrosshair = (
     return next;
   }
 
+  const safeAlpha = Number.isFinite(alpha)
+    ? Math.min(1, Math.max(0, alpha))
+    : gameConfig.input.smoothingAlpha;
+
   return {
-    x: previous.x + (next.x - previous.x) * alpha,
-    y: previous.y + (next.y - previous.y) * alpha
+    x: previous.x + (next.x - previous.x) * safeAlpha,
+    y: previous.y + (next.y - previous.y) * safeAlpha
   };
 };

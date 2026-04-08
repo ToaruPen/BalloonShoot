@@ -1,15 +1,15 @@
 export interface AudioController {
   startBgm(): Promise<void>;
   stopBgm(): void;
-  playShot(): void;
-  playHit(): void;
-  playTimeout(): void;
-  playResult(): void;
+  playShot(): Promise<void>;
+  playHit(): Promise<void>;
+  playTimeout(): Promise<void>;
+  playResult(): Promise<void>;
 }
 
-const playOneShot = (src: string): void => {
+const playOneShot = async (src: string): Promise<void> => {
   const audio = new Audio(src);
-  void audio.play();
+  await audio.play();
 };
 
 export const createAudioController = (): AudioController => {
@@ -24,17 +24,17 @@ export const createAudioController = (): AudioController => {
       bgm.pause();
       bgm.currentTime = 0;
     },
-    playShot(): void {
-      playOneShot("/audio/shot.mp3");
+    playShot(): Promise<void> {
+      return playOneShot("/audio/shot.mp3");
     },
-    playHit(): void {
-      playOneShot("/audio/hit.mp3");
+    playHit(): Promise<void> {
+      return playOneShot("/audio/hit.mp3");
     },
-    playTimeout(): void {
-      playOneShot("/audio/time-up.mp3");
+    playTimeout(): Promise<void> {
+      return playOneShot("/audio/time-up.mp3");
     },
-    playResult(): void {
-      playOneShot("/audio/result.mp3");
+    playResult(): Promise<void> {
+      return playOneShot("/audio/result.mp3");
     }
   };
 };
