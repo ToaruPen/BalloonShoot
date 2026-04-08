@@ -4,4 +4,4 @@ dist/
 build/
 .vite/
 coverage/
-
+.superpowers/
