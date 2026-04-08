@@ -3,7 +3,7 @@ export interface CrosshairPoint {
   y: number;
 }
 
-const FOLLOW_FACTOR = 1.25;
+const FOLLOW_FACTOR = 0.28;
 
 export const smoothCrosshair = (
   previous: CrosshairPoint | undefined,

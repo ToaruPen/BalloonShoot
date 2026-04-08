@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { smoothCrosshair } from "../../../../src/features/input-mapping/createCrosshairSmoother";
 import { mapHandToGameInput } from "../../../../src/features/input-mapping/mapHandToGameInput";
 import type { HandFrame } from "../../../../src/shared/types/hand";
 
@@ -18,6 +19,16 @@ const frame: HandFrame = {
 };
 
 describe("mapHandToGameInput", () => {
+  it("keeps the smoother between the previous crosshair and the raw target", () => {
+    const result = smoothCrosshair(
+      { x: 640, y: 0 },
+      { x: 256, y: 0 }
+    );
+
+    expect(result.x).toBeLessThan(640);
+    expect(result.x).toBeGreaterThan(256);
+  });
+
   it("maps the index finger to mirrored canvas coordinates", () => {
     const result = mapHandToGameInput(frame, { width: 1280, height: 720 }, undefined);
     expect(result.crosshair.x).toBeCloseTo(640, 0);
@@ -56,7 +67,7 @@ describe("mapHandToGameInput", () => {
       first.runtime
     );
 
-    expect(second.crosshair.x).toBeLessThan(256);
-    expect(second.crosshair.x).toBeGreaterThan(0);
+    expect(second.crosshair.x).toBeLessThan(first.crosshair.x);
+    expect(second.crosshair.x).toBeGreaterThan(256);
   });
 });

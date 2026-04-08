@@ -28,7 +28,8 @@ export const mapHandToGameInput = (
   const crosshair = smoothCrosshair(runtime?.crosshair, rawCrosshair);
   const gunPoseActive = evaluateGunPose(frame);
   const triggerState = evaluateThumbTrigger(frame);
-  const shotFired = gunPoseActive && runtime?.triggerState === "open" && triggerState === "pulled";
+  const previousTriggerState = runtime?.triggerState ?? "open";
+  const shotFired = gunPoseActive && previousTriggerState === "open" && triggerState === "pulled";
 
   return {
     crosshair,
