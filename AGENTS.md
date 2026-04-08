@@ -2,20 +2,22 @@
 
 ## WHY
 
-- `BalloonShoot` is a browser-based game prototype for after-school daycare use.
-- The target interaction is finger-aimed balloon shooting using a laptop webcam.
-- The current phase is requirements and design. A production-ready implementation does not exist yet.
+- `BalloonShoot` is a Chrome-first browser PoC for after-school daycare use.
+- The current goal is to validate webcam aiming, thumb-trigger shooting, and simple balloon gameplay on ordinary laptops.
 
 ## WHAT
 
-- `docs/notes/2026-04-08-project-memo.md`: current project memo covering goals, MVP scope, and the proposed technical stack.
-- `docs/setup/codex-remote-setup.md`: notes for using this repository with Codex remote/cloud workflows.
-- The repository currently contains planning documents only. App source code has not been added yet.
+- `docs/superpowers/specs/2026-04-08-poc-foundation-design.md`: authoritative PoC design
+- `docs/superpowers/plans/2026-04-08-poc-implementation.md`: implementation plan
+- `docs/superpowers/handovers/2026-04-08-implementation-session-handoff.md`: latest session handoff
+- `src/AGENTS.md`: source tree guidance
+- `tests/AGENTS.md`: test tree guidance
+- `docs/AGENTS.md`: docs tree guidance
+- `public/AGENTS.md`: static asset guidance
 
 ## HOW
 
-- Treat the project memo as the current source of truth until a formal spec is written.
-- Prefer lightweight web implementation choices that fit local laptop execution: Web, TypeScript, MediaPipe Hand Landmarker, and Canvas 2D.
-- Keep design and implementation aligned with the daycare use case: short play sessions, clear feedback, simple rules, and low setup overhead.
-- When adding code later, keep hand tracking, input mapping, game logic, and rendering as separate concerns.
-
+- Keep gameplay, input mapping, rendering, and browser adapters separate.
+- Treat `lint`, `typecheck`, and `test` as blocking checks once the toolchain exists.
+- Write every `AGENTS.md` in English and add a sibling `CLAUDE.md` symlink in the same directory.
+- Add more scoped guidance in the directory where the work happens instead of expanding this file.
