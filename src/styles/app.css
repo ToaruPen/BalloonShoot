@@ -39,13 +39,15 @@ button {
   color: rgb(19 34 56 / 68%);
   font-size: 1rem;
   letter-spacing: 0.04em;
+  overflow: hidden;
 }
 
-.camera-underlay p {
-  padding: 0.85rem 1.2rem;
-  border: 2px dashed rgb(19 34 56 / 20%);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 40%);
+.camera-feed {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  background: rgb(19 34 56 / 8%);
 }
 
 .game-canvas {
@@ -139,6 +141,40 @@ button {
   transform: translateY(1px);
 }
 
+.debug-root {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  pointer-events: auto;
+}
+
+.debug-panel {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.9rem;
+  background: rgb(19 34 56 / 72%);
+  color: #fffdf1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 14px 30px rgb(19 34 56 / 24%);
+  min-width: 13rem;
+}
+
+.debug-panel-row {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.debug-panel input[type="range"] {
+  width: 100%;
+  accent-color: #ff7b54;
+}
+
 @media (max-width: 640px) {
   .overlay {
     padding: 0.75rem;
@@ -151,5 +187,15 @@ button {
 
   .screen {
     padding: 1.2rem;
+  }
+
+  .debug-root {
+    top: 0.5rem;
+    left: 0.5rem;
+    right: auto;
+  }
+
+  .debug-panel {
+    min-width: 0;
   }
 }

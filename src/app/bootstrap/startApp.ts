@@ -1,5 +1,7 @@
+import { createDebugPanel, type DebugValues } from "../../features/debug/createDebugPanel";
 import { createGameEngine } from "../../features/gameplay/domain/createGameEngine";
 import { drawGameFrame } from "../../features/rendering/drawGameFrame";
+import { gameConfig } from "../../shared/config/gameConfig";
 import { renderShell } from "../screens/renderShell";
 import type { AppEvent } from "../state/appState";
 import { createInitialAppState, reduceAppEvent } from "../state/reduceAppEvent";
@@ -33,19 +35,32 @@ export const startApp = (root: HTMLDivElement): void => {
   root.innerHTML = `
     <div class="app-layout">
       <div class="camera-underlay" id="camera-root" aria-hidden="true">
-        <p>Camera feed will attach here in issue #9.</p>
+        <video class="camera-feed" playsinline muted></video>
       </div>
       <canvas class="game-canvas"></canvas>
       <div class="overlay-root"></div>
+      <div class="debug-root" id="debug-root"></div>
     </div>
   `;
 
   const canvas = root.querySelector<HTMLCanvasElement>(".game-canvas");
   const overlayRoot = root.querySelector<HTMLDivElement>(".overlay-root");
+  const cameraVideo = root.querySelector<HTMLVideoElement>(".camera-feed");
+  const debugRoot = root.querySelector<HTMLElement>("#debug-root");
 
-  if (!canvas || !overlayRoot) {
+  if (!canvas || !overlayRoot || !cameraVideo || !debugRoot) {
     throw new Error("Missing app shell roots");
   }
+
+  const debugPanel = createDebugPanel({ ...gameConfig.input } satisfies DebugValues);
+  debugRoot.innerHTML = debugPanel.render();
+  debugPanel.bind(debugRoot.querySelectorAll<HTMLInputElement>("[data-debug]"));
+
+  // TODO(codex/issue-9-backend-adapters): codex's wiring will assign
+  // `cameraVideo.srcObject` from `await camera.requestStream()` inside the
+  // camera-ready dispatch, and feed `debugPanel.values` into the hand tracker
+  // and input-mapping loop. The `void` keeps TypeScript silent until then.
+  void cameraVideo;
 
   const ctx = canvas.getContext("2d");
 
