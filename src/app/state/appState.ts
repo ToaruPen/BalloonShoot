@@ -1,12 +1,30 @@
 export type ScreenName = "permission" | "ready" | "countdown" | "playing" | "result";
 
-export interface AppState {
-  screen: ScreenName;
-  countdown: number;
+interface HudState {
   score: number;
   combo: number;
   multiplier: number;
 }
+
+export type AppState =
+  | (HudState & {
+      screen: "permission";
+      countdown: number;
+    })
+  | (HudState & {
+      screen: "ready";
+      countdown: number;
+    })
+  | (HudState & {
+      screen: "countdown";
+      countdown: number;
+    })
+  | (HudState & {
+      screen: "playing";
+    })
+  | (HudState & {
+      screen: "result";
+    });
 
 export type AppEvent =
   | { type: "CAMERA_READY" }

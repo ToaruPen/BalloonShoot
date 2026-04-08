@@ -6,6 +6,23 @@ import { createInitialAppState, reduceAppEvent } from "../state/reduceAppEvent";
 
 const CROSSHAIR_Y_RATIO = 0.62;
 
+export const resolveOverlayAction = (
+  target: Element | null,
+  overlayRoot: Pick<HTMLElement, "contains">
+): string | undefined => {
+  if (!target) {
+    return undefined;
+  }
+
+  const actionElement = target.closest<HTMLElement>("[data-action]");
+
+  if (!actionElement || !overlayRoot.contains(actionElement)) {
+    return undefined;
+  }
+
+  return actionElement.dataset["action"];
+};
+
 export const startApp = (root: HTMLDivElement): void => {
   let state = createInitialAppState();
   let engine = createGameEngine();
@@ -144,9 +161,15 @@ export const startApp = (root: HTMLDivElement): void => {
 
   const dispatch = (event: AppEvent): void => {
     if (event.type === "START_CLICKED") {
-      engine = createGameEngine();
+      const nextState = reduceAppEvent(state, event);
+
+      if (nextState === state) {
+        return;
+      }
+
+      state = nextState;
       stopGameLoop();
-      state = reduceAppEvent(state, event);
+      engine = createGameEngine();
       startCountdown();
       return;
     }
@@ -166,12 +189,7 @@ export const startApp = (root: HTMLDivElement): void => {
 
   overlayRoot.addEventListener("click", (event) => {
     const target = event.target;
-
-    if (!(target instanceof HTMLElement)) {
-      return;
-    }
-
-    const action = target.dataset["action"];
+    const action = target instanceof Element ? resolveOverlayAction(target, overlayRoot) : undefined;
 
     if (action === "camera") {
       dispatch({ type: "CAMERA_READY" });
