@@ -1,11 +1,12 @@
 import { createAudioController, type AudioController } from "../../features/audio/createAudioController";
 import { createCameraController, type CameraController } from "../../features/camera/createCameraController";
+import { createDebugPanel, type DebugValues } from "../../features/debug/createDebugPanel";
+import { createGameEngine, registerShot } from "../../features/gameplay/domain/createGameEngine";
 import { createMediaPipeHandTracker } from "../../features/hand-tracking/createMediaPipeHandTracker";
 import {
   mapHandToGameInput,
   type InputRuntimeState
 } from "../../features/input-mapping/mapHandToGameInput";
-import { createGameEngine, registerShot } from "../../features/gameplay/domain/createGameEngine";
 import { drawGameFrame } from "../../features/rendering/drawGameFrame";
 import { gameConfig } from "../../shared/config/gameConfig";
 import { renderShell } from "../screens/renderShell";
@@ -21,12 +22,6 @@ interface ImageCaptureLike {
 type ImageCaptureConstructorLike = new (track: MediaStreamTrack) => ImageCaptureLike;
 
 type CameraFeedListener = (stream: MediaStream | undefined) => void;
-
-export interface DebugValues {
-  smoothingAlpha: number;
-  triggerPullThreshold: number;
-  triggerReleaseThreshold: number;
-}
 
 let cameraFeedStream: MediaStream | undefined;
 let cameraFeedListener: CameraFeedListener | undefined;
@@ -113,22 +108,29 @@ export const startApp = (
   root.innerHTML = `
     <div class="app-layout">
       <div class="camera-underlay" id="camera-root" aria-hidden="true">
-        <p>Camera feed will attach here in issue #9.</p>
+        <video class="camera-feed" playsinline muted autoplay></video>
       </div>
       <canvas class="game-canvas"></canvas>
       <div class="overlay-root"></div>
+      <div class="debug-root" id="debug-root"></div>
     </div>
   `;
 
   const canvas = root.querySelector<HTMLCanvasElement>(".game-canvas");
   const cameraRoot = root.querySelector<HTMLDivElement>("#camera-root");
   const overlayRoot = root.querySelector<HTMLDivElement>(".overlay-root");
+  const cameraVideo = root.querySelector<HTMLVideoElement>(".camera-feed");
+  const debugRoot = root.querySelector<HTMLElement>("#debug-root");
 
-  if (!canvas || !cameraRoot || !overlayRoot) {
+  if (!canvas || !cameraRoot || !overlayRoot || !cameraVideo || !debugRoot) {
     throw new Error("Missing app shell roots");
   }
 
-  // UI: mount stream into camera-feed from `setCameraFeedStreamListener()`.
+  const debugPanel = createDebugPanel({ ...gameConfig.input } satisfies DebugValues);
+  debugRoot.innerHTML = debugPanel.render();
+  debugPanel.bind(debugRoot.querySelectorAll<HTMLInputElement>("[data-debug]"));
+
+
   const ctx = canvas.getContext("2d");
 
   if (!ctx) {
@@ -420,12 +422,23 @@ export const startApp = (
     if (action === "camera") {
       audio ??= createAudioController();
       camera ??= createCameraController();
-      void getTrackerPromise().catch(handleCameraFailure);
+      // Prewarm the MediaPipe tracker asynchronously. If this fails (e.g.
+      // missing model asset, CDN hiccup), log and continue: the tracker loop
+      // will retry when gameplay actually starts, and camera-ready should not
+      // depend on tracker readiness.
+      void getTrackerPromise().catch((error: unknown) => {
+        console.error("Tracker prewarm failed; will retry on first frame", error);
+      });
 
       void camera
         .requestStream()
         .then((stream) => {
-          trackingCapture = createImageCapture(stream);
+          cameraVideo.srcObject = stream;
+          // Autoplay with muted is allowed without a gesture in Chrome; the
+          // promise is ignored because the `muted` attribute covers the
+          // autoplay policy and any exception would only affect playback
+          // visuals, not the state transition.
+          void cameraVideo.play().catch(() => undefined);
           publishCameraFeedStream(stream);
           dispatch({ type: "CAMERA_READY" });
         })

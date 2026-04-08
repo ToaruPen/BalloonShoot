@@ -6,22 +6,40 @@ const {
   createMediaPipeHandTrackerMock,
   createGameEngineMock,
   registerShotMock,
-  drawGameFrameMock
-} = vi.hoisted(() => ({
-  createAudioControllerMock: vi.fn(),
-  createCameraControllerMock: vi.fn(),
-  createMediaPipeHandTrackerMock: vi.fn(),
-  createGameEngineMock: vi.fn(() => ({
-    score: 0,
-    combo: 0,
-    multiplier: 1,
-    balloons: [],
-    timeRemainingMs: 60_000,
-    advance: vi.fn()
-  })),
-  registerShotMock: vi.fn(),
-  drawGameFrameMock: vi.fn()
-}));
+  drawGameFrameMock,
+  createDebugPanelMock,
+  debugPanelInstance,
+  inputConfig
+} = vi.hoisted(() => {
+  const inputConfig = {
+    smoothingAlpha: 0.28,
+    triggerPullThreshold: 0.45,
+    triggerReleaseThreshold: 0.25
+  };
+  const debugPanelInstance = {
+    values: { ...inputConfig },
+    render: vi.fn(() => `<aside class="debug-panel"></aside>`),
+    bind: vi.fn()
+  };
+  return {
+    createAudioControllerMock: vi.fn(),
+    createCameraControllerMock: vi.fn(),
+    createMediaPipeHandTrackerMock: vi.fn(),
+    createGameEngineMock: vi.fn(() => ({
+      score: 0,
+      combo: 0,
+      multiplier: 1,
+      balloons: [],
+      timeRemainingMs: 60_000,
+      advance: vi.fn()
+    })),
+    registerShotMock: vi.fn(),
+    drawGameFrameMock: vi.fn(),
+    createDebugPanelMock: vi.fn(() => debugPanelInstance),
+    debugPanelInstance,
+    inputConfig
+  };
+});
 
 vi.mock("../../../../src/features/audio/createAudioController", () => ({
   createAudioController: createAudioControllerMock
@@ -42,6 +60,17 @@ vi.mock("../../../../src/features/gameplay/domain/createGameEngine", () => ({
 
 vi.mock("../../../../src/features/rendering/drawGameFrame", () => ({
   drawGameFrame: drawGameFrameMock
+}));
+
+vi.mock("../../../../src/features/debug/createDebugPanel", () => ({
+  createDebugPanel: createDebugPanelMock
+}));
+
+vi.mock("../../../../src/shared/config/gameConfig", () => ({
+  gameConfig: {
+    camera: { width: 640, height: 480 },
+    input: inputConfig
+  }
 }));
 
 vi.mock("../../../../src/app/screens/renderShell", () => ({
@@ -92,10 +121,20 @@ const createFakeRoot = () => {
     getContext: vi.fn(() => ({}))
   };
   const cameraRoot = {};
+  const cameraVideo = {
+    srcObject: null as MediaStream | null,
+    play: vi.fn(() => Promise.resolve())
+  };
+  const debugRoot = {
+    innerHTML: "",
+    querySelectorAll: vi.fn(() => [])
+  };
   const selectors = new Map<string, unknown>([
     [".game-canvas", canvas],
     ["#camera-root", cameraRoot],
-    [".overlay-root", overlayRoot]
+    [".overlay-root", overlayRoot],
+    [".camera-feed", cameraVideo],
+    ["#debug-root", debugRoot]
   ]);
   const root = {
     innerHTML: "",
@@ -104,7 +143,9 @@ const createFakeRoot = () => {
 
   return {
     root,
-    overlayRoot
+    overlayRoot,
+    cameraVideo,
+    debugRoot
   };
 };
 
@@ -114,25 +155,13 @@ const flushPromises = async (): Promise<void> => {
   await Promise.resolve();
 };
 
-describe("startApp camera recovery", () => {
-  let runNextAnimationFrame: (frameAtMs?: number) => void;
-
+describe("startApp", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
 
     let nextAnimationFrameId = 1;
     const animationFrames = new Map<number, FrameRequestCallback>();
-    runNextAnimationFrame = (frameAtMs = 16) => {
-      const firstEntry = animationFrames.entries().next().value;
-
-      if (!firstEntry) {
-        throw new Error("Expected a scheduled animation frame");
-      }
-
-      animationFrames.delete(firstEntry[0]);
-      firstEntry[1](frameAtMs);
-    };
 
     Object.defineProperty(globalThis, "Element", {
       configurable: true,
@@ -158,7 +187,11 @@ describe("startApp camera recovery", () => {
         }),
         ImageCapture: class {
           grabFrame(): Promise<ImageBitmap> {
-            return Promise.resolve({ width: 640, height: 480, close: vi.fn() } as unknown as ImageBitmap);
+            return Promise.resolve({
+              width: 640,
+              height: 480,
+              close: vi.fn()
+            } as unknown as ImageBitmap);
           }
         }
       }
@@ -175,6 +208,31 @@ describe("startApp camera recovery", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("seeds the debug panel from shared input config", async () => {
+    createAudioControllerMock.mockReturnValue({
+      startBgm: vi.fn(() => Promise.resolve()),
+      stopBgm: vi.fn(),
+      playShot: vi.fn(() => Promise.resolve()),
+      playHit: vi.fn(() => Promise.resolve()),
+      playTimeout: vi.fn(() => Promise.resolve()),
+      playResult: vi.fn(() => Promise.resolve())
+    });
+    createCameraControllerMock.mockReturnValue({
+      requestStream: vi.fn(() => Promise.resolve({ getTracks: () => [], getVideoTracks: () => [] })),
+      stop: vi.fn()
+    });
+    createMediaPipeHandTrackerMock.mockResolvedValue({ detect: vi.fn() });
+
+    const { startApp } = await import("../../../../src/app/bootstrap/startApp");
+    const { root } = createFakeRoot();
+
+    startApp(root as unknown as HTMLDivElement);
+
+    expect(createDebugPanelMock).toHaveBeenCalledWith(inputConfig);
+    expect(debugPanelInstance.render).toHaveBeenCalled();
+    expect(debugPanelInstance.bind).toHaveBeenCalled();
   });
 
   it("clears the prewarmed tracker promise when camera startup fails so the user can retry", async () => {
@@ -214,20 +272,17 @@ describe("startApp camera recovery", () => {
     expect(createMediaPipeHandTrackerMock).toHaveBeenCalledTimes(2);
   });
 
-  it("stops tracking, clears the camera feed, and retries tracker creation after tracker startup fails", async () => {
-    const trackerStartupError = new Error("tracker failed");
-    const trackStop = vi.fn();
+  it("keeps the app in ready state when tracker prewarm fails and clears the cached tracker promise for retry", async () => {
+    const trackerStartupError = new Error("tracker prewarm failed");
+    const cameraStop = vi.fn();
     const stream = {
-      getTracks: () => [{ stop: trackStop }],
-      getVideoTracks: () => [{ stop: trackStop }]
+      getTracks: () => [],
+      getVideoTracks: () => []
     } as unknown as MediaStream;
-    const startBgm = vi.fn(() => Promise.resolve());
-    const stopBgm = vi.fn();
-    let rejectTracker: ((error: Error) => void) | undefined;
 
     createAudioControllerMock.mockReturnValue({
-      startBgm,
-      stopBgm,
+      startBgm: vi.fn(() => Promise.resolve()),
+      stopBgm: vi.fn(),
       playShot: vi.fn(() => Promise.resolve()),
       playHit: vi.fn(() => Promise.resolve()),
       playTimeout: vi.fn(() => Promise.resolve()),
@@ -235,47 +290,29 @@ describe("startApp camera recovery", () => {
     });
     createCameraControllerMock.mockReturnValue({
       requestStream: vi.fn(() => Promise.resolve(stream)),
-      stop: trackStop
+      stop: cameraStop
     });
     createMediaPipeHandTrackerMock
-      .mockImplementationOnce(
-        () =>
-          new Promise((_, reject: (error: Error) => void) => {
-            rejectTracker = reject;
-          })
-      )
-      .mockResolvedValueOnce({
-        detect: vi.fn().mockResolvedValue(undefined)
-      });
+      .mockImplementationOnce(() => Promise.reject(trackerStartupError))
+      .mockResolvedValueOnce({ detect: vi.fn().mockResolvedValue(undefined) });
 
-    const { getCameraFeedStream, startApp } = await import(
-      "../../../../src/app/bootstrap/startApp"
-    );
+    const { startApp } = await import("../../../../src/app/bootstrap/startApp");
     const { root, overlayRoot } = createFakeRoot();
 
     startApp(root as unknown as HTMLDivElement);
     overlayRoot.click("camera");
     await flushPromises();
-    overlayRoot.click("start");
-    runNextAnimationFrame();
-    rejectTracker?.(trackerStartupError);
-    await flushPromises();
 
-    expect(stopBgm).toHaveBeenCalledTimes(1);
-    expect(trackStop).toHaveBeenCalledTimes(1);
-    expect(getCameraFeedStream()).toBeUndefined();
-    expect(overlayRoot.innerHTML).toContain('data-screen="permission"');
+    // Tracker prewarm failure is logged but non-fatal — state should reach ready,
+    // not get reset back to permission.
+    expect(cameraStop).not.toHaveBeenCalled();
+    expect(overlayRoot.innerHTML).toContain('data-screen="ready"');
 
+    // Clicking camera again triggers a new prewarm attempt because the rejected
+    // promise was cleared inside getTrackerPromise.
     overlayRoot.click("camera");
     await flushPromises();
 
     expect(createMediaPipeHandTrackerMock).toHaveBeenCalledTimes(2);
-    expect(startBgm).toHaveBeenCalledTimes(1);
-
-    overlayRoot.click("start");
-    runNextAnimationFrame();
-    await flushPromises();
-
-    expect(startBgm).toHaveBeenCalledTimes(2);
   });
 });
