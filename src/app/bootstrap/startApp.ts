@@ -1,18 +1,12 @@
 import { createDebugPanel, type DebugValues } from "../../features/debug/createDebugPanel";
 import { createGameEngine } from "../../features/gameplay/domain/createGameEngine";
 import { drawGameFrame } from "../../features/rendering/drawGameFrame";
+import { gameConfig } from "../../shared/config/gameConfig";
 import { renderShell } from "../screens/renderShell";
 import type { AppEvent } from "../state/appState";
 import { createInitialAppState, reduceAppEvent } from "../state/reduceAppEvent";
 
 const CROSSHAIR_Y_RATIO = 0.62;
-
-// TODO(codex/issue-9-backend-adapters): replace with `gameConfig.input` once merged.
-const DEBUG_INITIAL_VALUES: DebugValues = {
-  smoothingAlpha: 0.28,
-  triggerPullThreshold: 0.45,
-  triggerReleaseThreshold: 0.25
-};
 
 export const resolveOverlayAction = (
   target: Element | null,
@@ -58,7 +52,7 @@ export const startApp = (root: HTMLDivElement): void => {
     throw new Error("Missing app shell roots");
   }
 
-  const debugPanel = createDebugPanel(DEBUG_INITIAL_VALUES);
+  const debugPanel = createDebugPanel({ ...gameConfig.input } satisfies DebugValues);
   debugRoot.innerHTML = debugPanel.render();
   debugPanel.bind(debugRoot.querySelectorAll<HTMLInputElement>("[data-debug]"));
 

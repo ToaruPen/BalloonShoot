@@ -86,7 +86,7 @@ Unchanged from plan. Methods: `startBgm`, `stopBgm`, `playShot`, `playHit`,
 
 ### `src/features/debug/createDebugPanel.ts` (Claude)
 
-Contract unchanged. Types:
+Contract updated to match the current implementation. Types:
 
 ```ts
 export interface DebugValues {
@@ -95,17 +95,24 @@ export interface DebugValues {
   triggerReleaseThreshold: number;
 }
 
+export interface DebugInputElement {
+  dataset: { debug?: string };
+  value: string;
+  addEventListener(type: "input", listener: () => void): void;
+}
+
 export interface DebugPanel {
   values: DebugValues;
   render(): string;
-  bind(root: HTMLElement): void;
+  bind(inputs: Iterable<DebugInputElement>): void;
 }
 
-export const createDebugPanel: () => DebugPanel;
+export const createDebugPanel: (initial: DebugValues) => DebugPanel;
 ```
 
 - Initial values come from `gameConfig.input`.
-- `bind` wires `input` listeners on `[data-debug]` nodes to mutate `values` in place.
+- `bind` accepts the iterable of `[data-debug]` inputs selected by the caller and
+  wires `input` listeners to mutate `values` in place.
 - The exposed `values` object is the single source of truth consumed by the
   hand-tracker/input-mapping pipeline on the codex side.
 

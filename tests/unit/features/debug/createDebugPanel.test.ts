@@ -17,12 +17,17 @@ interface FakeInput extends DebugInputElement {
 
 const createFakeInput = (key: string, initialValue: string): FakeInput => {
   let listener: (() => void) | undefined;
+  const addEventListener = (type: string, cb: () => void): void => {
+    if (type !== "input") {
+      throw new Error(`Unexpected event type: ${type}`);
+    }
+
+    listener = cb;
+  };
   const input: FakeInput = {
     dataset: { debug: key },
     value: initialValue,
-    addEventListener: (_type, cb) => {
-      listener = cb;
-    },
+    addEventListener: addEventListener as DebugInputElement["addEventListener"],
     fireInput: () => {
       if (listener) {
         listener();
