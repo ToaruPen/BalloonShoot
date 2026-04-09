@@ -5,4 +5,5 @@ build/
 .vite/
 coverage/
 .superpowers/
+.claude/
 *.tsbuildinfo
