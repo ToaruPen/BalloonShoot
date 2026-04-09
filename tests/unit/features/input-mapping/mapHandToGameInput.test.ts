@@ -57,10 +57,10 @@ describe("mapHandToGameInput", () => {
     });
   });
 
-  it("maps the index finger to mirrored canvas coordinates", () => {
+  it("maps the index finger to mirrored viewport coordinates", () => {
     const result = mapHandToGameInput(frame, { width: 1280, height: 720 }, undefined);
     expect(result.crosshair.x).toBeCloseTo(640, 0);
-    expect(result.crosshair.y).toBeCloseTo(216, 0);
+    expect(result.crosshair.y).toBeCloseTo(168, 0);
   });
 
   it("only emits a shot when a loose gun pose and trigger pull occur", () => {
