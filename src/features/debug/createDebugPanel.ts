@@ -24,6 +24,8 @@ interface DebugControlMeta {
   step: number;
 }
 
+const HYSTERESIS_GAP = 0.01;
+
 const DEBUG_KEYS = [
   "smoothingAlpha",
   "triggerPullThreshold",
@@ -34,8 +36,8 @@ const DEBUG_KEY_SET: ReadonlySet<string> = new Set(DEBUG_KEYS);
 
 const DEBUG_META: Record<keyof DebugValues, DebugControlMeta> = {
   smoothingAlpha: { label: "Smoothing", min: 0.1, max: 0.6, step: 0.01 },
-  triggerPullThreshold: { label: "Pull", min: 0.2, max: 0.8, step: 0.01 },
-  triggerReleaseThreshold: { label: "Release", min: 0.1, max: 0.6, step: 0.01 }
+  triggerPullThreshold: { label: "Pull", min: 0.05, max: 0.4, step: 0.01 },
+  triggerReleaseThreshold: { label: "Release", min: 0.02, max: 0.25, step: 0.01 }
 };
 
 const isDebugKey = (key: string | undefined): key is keyof DebugValues =>
@@ -50,16 +52,43 @@ const clampToMeta = (key: keyof DebugValues, value: number): number => {
   return clamp(safeValue, meta.min, meta.max);
 };
 
+const countDecimals = (value: number): number => {
+  const [, decimals = ""] = String(value).split(".");
+  return decimals.length;
+};
+
+const formatForInput = (key: keyof DebugValues, value: number): string =>
+  String(Number(value.toFixed(countDecimals(DEBUG_META[key].step))));
+
+const normalizeTriggerThresholds = (
+  triggerPullThreshold: number,
+  triggerReleaseThreshold: number
+): Pick<DebugValues, "triggerPullThreshold" | "triggerReleaseThreshold"> => {
+  const normalizedPull = clampToMeta("triggerPullThreshold", triggerPullThreshold);
+  const normalizedRelease = clampToMeta("triggerReleaseThreshold", triggerReleaseThreshold);
+
+  return {
+    triggerPullThreshold: normalizedPull,
+    triggerReleaseThreshold: Math.min(
+      normalizedRelease,
+      normalizedPull - HYSTERESIS_GAP
+    )
+  };
+};
+
 export const createDebugPanel = (initial: DebugValues): DebugPanel => {
   const values: DebugValues = {
     smoothingAlpha: clampToMeta("smoothingAlpha", initial.smoothingAlpha),
-    triggerPullThreshold: clampToMeta("triggerPullThreshold", initial.triggerPullThreshold),
-    triggerReleaseThreshold: clampToMeta("triggerReleaseThreshold", initial.triggerReleaseThreshold)
+    ...normalizeTriggerThresholds(
+      initial.triggerPullThreshold,
+      initial.triggerReleaseThreshold
+    )
   };
+  const boundInputs: Partial<Record<keyof DebugValues, DebugInputElement>> = {};
 
   const renderRow = (key: keyof DebugValues): string => {
     const meta = DEBUG_META[key];
-    return `<label class="debug-panel-row">${meta.label}<input data-debug="${key}" type="range" min="${String(meta.min)}" max="${String(meta.max)}" step="${String(meta.step)}" value="${String(values[key])}" /></label>`;
+    return `<label class="debug-panel-row">${meta.label}<input data-debug="${key}" type="range" min="${String(meta.min)}" max="${String(meta.max)}" step="${String(meta.step)}" value="${formatForInput(key, values[key])}" /></label>`;
   };
 
   const render = (): string => {
@@ -67,8 +96,24 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
     return `<aside class="debug-panel" aria-label="debug controls">${rows}</aside>`;
   };
 
+  const syncInputValue = (key: keyof DebugValues): void => {
+    const input = boundInputs[key];
+
+    if (!input) {
+      return;
+    }
+
+    input.value = formatForInput(key, values[key]);
+  };
+
   const bind = (inputs: Iterable<DebugInputElement>): void => {
     for (const input of inputs) {
+      const boundKey = input.dataset.debug;
+
+      if (isDebugKey(boundKey)) {
+        boundInputs[boundKey] = input;
+      }
+
       input.addEventListener("input", () => {
         const key = input.dataset.debug;
 
@@ -83,6 +128,29 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
         }
 
         values[key] = clampToMeta(key, parsed);
+        syncInputValue(key);
+
+        if (key === "triggerPullThreshold") {
+          const normalized = normalizeTriggerThresholds(
+            values.triggerPullThreshold,
+            values.triggerReleaseThreshold
+          );
+          values.triggerPullThreshold = normalized.triggerPullThreshold;
+          values.triggerReleaseThreshold = normalized.triggerReleaseThreshold;
+          syncInputValue("triggerPullThreshold");
+          syncInputValue("triggerReleaseThreshold");
+        }
+
+        if (key === "triggerReleaseThreshold") {
+          const normalized = normalizeTriggerThresholds(
+            values.triggerPullThreshold,
+            values.triggerReleaseThreshold
+          );
+          values.triggerPullThreshold = normalized.triggerPullThreshold;
+          values.triggerReleaseThreshold = normalized.triggerReleaseThreshold;
+          syncInputValue("triggerPullThreshold");
+          syncInputValue("triggerReleaseThreshold");
+        }
       });
     }
   };

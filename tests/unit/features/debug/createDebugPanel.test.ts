@@ -7,8 +7,8 @@ import {
 
 const sampleInitial: DebugValues = {
   smoothingAlpha: 0.28,
-  triggerPullThreshold: 0.45,
-  triggerReleaseThreshold: 0.25
+  triggerPullThreshold: 0.18,
+  triggerReleaseThreshold: 0.1
 };
 
 interface FakeInput extends DebugInputElement {
@@ -55,28 +55,54 @@ describe("createDebugPanel", () => {
     expect(html).toContain('data-debug="triggerPullThreshold"');
     expect(html).toContain('data-debug="triggerReleaseThreshold"');
     expect(html).toContain('value="0.28"');
-    expect(html).toContain('value="0.45"');
-    expect(html).toContain('value="0.25"');
+    expect(html).toContain('value="0.18"');
+    expect(html).toContain('value="0.1"');
+    expect(html).toContain('min="0.05"');
+    expect(html).toContain('max="0.4"');
+    expect(html).toContain('min="0.02"');
+    expect(html).toContain('max="0.25"');
   });
 
   it("updates values in place when bound inputs fire", () => {
     const panel = createDebugPanel(sampleInitial);
     const smoothing = createFakeInput("smoothingAlpha", "0.28");
-    const pull = createFakeInput("triggerPullThreshold", "0.45");
-    const release = createFakeInput("triggerReleaseThreshold", "0.25");
+    const pull = createFakeInput("triggerPullThreshold", "0.18");
+    const release = createFakeInput("triggerReleaseThreshold", "0.1");
 
     panel.bind([smoothing, pull, release]);
 
     smoothing.value = "0.42";
     smoothing.fireInput();
-    pull.value = "0.6";
+    pull.value = "0.35";
     pull.fireInput();
-    release.value = "0.15";
+    release.value = "0.08";
     release.fireInput();
 
     expect(panel.values.smoothingAlpha).toBeCloseTo(0.42);
-    expect(panel.values.triggerPullThreshold).toBeCloseTo(0.6);
-    expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.15);
+    expect(panel.values.triggerPullThreshold).toBeCloseTo(0.35);
+    expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.08);
+  });
+
+  it("keeps release at least one step below pull when either threshold changes", () => {
+    const panel = createDebugPanel(sampleInitial);
+    const pull = createFakeInput("triggerPullThreshold", "0.18");
+    const release = createFakeInput("triggerReleaseThreshold", "0.1");
+
+    panel.bind([pull, release]);
+
+    release.value = "0.3";
+    release.fireInput();
+    expect(panel.values.triggerPullThreshold).toBeCloseTo(0.18);
+    expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.17);
+    expect(pull.value).toBe("0.18");
+    expect(release.value).toBe("0.17");
+
+    pull.value = "0.12";
+    pull.fireInput();
+    expect(panel.values.triggerPullThreshold).toBeCloseTo(0.12);
+    expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.11);
+    expect(pull.value).toBe("0.12");
+    expect(release.value).toBe("0.11");
   });
 
   it("keeps the values reference stable so external loops can hold it", () => {
@@ -113,8 +139,10 @@ describe("createDebugPanel", () => {
   it("clamps out-of-range values to the slider bounds", () => {
     const panel = createDebugPanel(sampleInitial);
     const smoothing = createFakeInput("smoothingAlpha", "0.28");
+    const pull = createFakeInput("triggerPullThreshold", "0.18");
+    const release = createFakeInput("triggerReleaseThreshold", "0.1");
 
-    panel.bind([smoothing]);
+    panel.bind([smoothing, pull, release]);
 
     smoothing.value = "0.9";
     smoothing.fireInput();
@@ -123,17 +151,33 @@ describe("createDebugPanel", () => {
     smoothing.value = "0.05";
     smoothing.fireInput();
     expect(panel.values.smoothingAlpha).toBeCloseTo(0.1);
+
+    pull.value = "0.8";
+    pull.fireInput();
+    expect(panel.values.triggerPullThreshold).toBeCloseTo(0.4);
+
+    pull.value = "0.01";
+    pull.fireInput();
+    expect(panel.values.triggerPullThreshold).toBeCloseTo(0.05);
+
+    release.value = "0.5";
+    release.fireInput();
+    expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.04);
+
+    release.value = "0.01";
+    release.fireInput();
+    expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.02);
   });
 
   it("clamps out-of-range initial values so untrusted config cannot render outside bounds", () => {
     const panel = createDebugPanel({
       smoothingAlpha: 0.05,
-      triggerPullThreshold: 0.95,
+      triggerPullThreshold: 0.06,
       triggerReleaseThreshold: 0.25
     });
 
     expect(panel.values.smoothingAlpha).toBeCloseTo(0.1);
-    expect(panel.values.triggerPullThreshold).toBeCloseTo(0.8);
-    expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.25);
+    expect(panel.values.triggerPullThreshold).toBeCloseTo(0.06);
+    expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.05);
   });
 });

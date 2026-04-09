@@ -9,8 +9,8 @@ describe("gameConfig", () => {
     });
     expect(gameConfig.input).toEqual({
       smoothingAlpha: 0.28,
-      triggerPullThreshold: 0.45,
-      triggerReleaseThreshold: 0.25
+      triggerPullThreshold: 0.18,
+      triggerReleaseThreshold: 0.1
     });
   });
 });
