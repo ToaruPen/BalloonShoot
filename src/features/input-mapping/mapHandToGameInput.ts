@@ -1,7 +1,12 @@
+import { gameConfig } from "../../shared/config/gameConfig";
 import type { HandFrame } from "../../shared/types/hand";
 import { smoothCrosshair, type CrosshairPoint } from "./createCrosshairSmoother";
 import { evaluateGunPose } from "./evaluateGunPose";
-import { evaluateThumbTrigger, type TriggerState } from "./evaluateThumbTrigger";
+import {
+  evaluateThumbTrigger,
+  type TriggerState,
+  type TriggerTuning
+} from "./evaluateThumbTrigger";
 
 export interface InputRuntimeState {
   crosshair?: CrosshairPoint;
@@ -16,10 +21,15 @@ export interface GameInputFrame {
   runtime: InputRuntimeState;
 }
 
+export interface InputTuning extends TriggerTuning {
+  smoothingAlpha: number;
+}
+
 export const mapHandToGameInput = (
   frame: HandFrame,
   canvasSize: { width: number; height: number },
-  runtime: InputRuntimeState | undefined
+  runtime: InputRuntimeState | undefined,
+  tuning: InputTuning = gameConfig.input
 ): GameInputFrame => {
   const indexTipX = Math.min(Math.max(frame.landmarks.indexTip.x, 0), 1);
   const indexTipY = Math.min(Math.max(frame.landmarks.indexTip.y, 0), 1);
@@ -27,10 +37,10 @@ export const mapHandToGameInput = (
     x: (1 - indexTipX) * canvasSize.width,
     y: indexTipY * canvasSize.height
   };
-  const crosshair = smoothCrosshair(runtime?.crosshair, rawCrosshair);
+  const crosshair = smoothCrosshair(runtime?.crosshair, rawCrosshair, tuning.smoothingAlpha);
   const gunPoseActive = evaluateGunPose(frame);
-  const triggerState = evaluateThumbTrigger(frame);
   const previousTriggerState = runtime?.triggerState ?? "open";
+  const triggerState = evaluateThumbTrigger(frame, previousTriggerState, tuning);
   const shotFired = gunPoseActive && previousTriggerState === "open" && triggerState === "pulled";
 
   return {

@@ -1,5 +1,12 @@
+import { createAudioController, type AudioController } from "../../features/audio/createAudioController";
+import { createCameraController, type CameraController } from "../../features/camera/createCameraController";
 import { createDebugPanel, type DebugValues } from "../../features/debug/createDebugPanel";
-import { createGameEngine } from "../../features/gameplay/domain/createGameEngine";
+import { createGameEngine, registerShot } from "../../features/gameplay/domain/createGameEngine";
+import { createMediaPipeHandTracker } from "../../features/hand-tracking/createMediaPipeHandTracker";
+import {
+  mapHandToGameInput,
+  type InputRuntimeState
+} from "../../features/input-mapping/mapHandToGameInput";
 import { drawGameFrame } from "../../features/rendering/drawGameFrame";
 import { gameConfig } from "../../shared/config/gameConfig";
 import { renderShell } from "../screens/renderShell";
@@ -7,6 +14,56 @@ import type { AppEvent } from "../state/appState";
 import { createInitialAppState, reduceAppEvent } from "../state/reduceAppEvent";
 
 const CROSSHAIR_Y_RATIO = 0.62;
+
+interface ImageCaptureLike {
+  grabFrame(): Promise<ImageBitmap>;
+}
+
+type ImageCaptureConstructorLike = new (track: MediaStreamTrack) => ImageCaptureLike;
+
+type CameraFeedListener = (stream: MediaStream | undefined) => void;
+
+let cameraFeedStream: MediaStream | undefined;
+let cameraFeedListener: CameraFeedListener | undefined;
+
+const publishCameraFeedStream = (stream: MediaStream | undefined): void => {
+  cameraFeedStream = stream;
+  cameraFeedListener?.(stream);
+};
+
+export const getCameraFeedStream = (): MediaStream | undefined => cameraFeedStream;
+
+export const setCameraFeedStreamListener = (
+  listener: CameraFeedListener | undefined
+): void => {
+  cameraFeedListener = listener;
+  listener?.(cameraFeedStream);
+};
+
+export const createDefaultDebugValues = (): DebugValues => ({
+  smoothingAlpha: gameConfig.input.smoothingAlpha,
+  triggerPullThreshold: gameConfig.input.triggerPullThreshold,
+  triggerReleaseThreshold: gameConfig.input.triggerReleaseThreshold
+});
+
+const createImageCapture = (stream: MediaStream): ImageCaptureLike => {
+  const ImageCaptureApi = (
+    window as Window & {
+      ImageCapture?: ImageCaptureConstructorLike;
+    }
+  ).ImageCapture;
+  const videoTrack = stream.getVideoTracks()[0];
+
+  if (!ImageCaptureApi) {
+    throw new Error("ImageCapture API is unavailable");
+  }
+
+  if (!videoTrack) {
+    throw new Error("Camera stream is missing a video track");
+  }
+
+  return new ImageCaptureApi(videoTrack);
+};
 
 export const resolveOverlayAction = (
   target: Element | null,
@@ -25,17 +82,33 @@ export const resolveOverlayAction = (
   return actionElement.dataset["action"];
 };
 
-export const startApp = (root: HTMLDivElement): void => {
+export const startApp = (
+  root: HTMLDivElement,
+  debugValues: DebugValues = createDefaultDebugValues()
+): void => {
   let state = createInitialAppState();
   let engine = createGameEngine();
+  let audio: AudioController | undefined;
+  let camera: CameraController | undefined;
   let countdownTimerId: number | undefined;
-  let frameRequestId: number | undefined;
+  let trackerPromise: ReturnType<typeof createMediaPipeHandTracker> | undefined;
+  let gameFrameRequestId: number | undefined;
+  let trackingFrameRequestId: number | undefined;
+  let trackingCapture: ImageCaptureLike | undefined;
+  let trackingFramePending = false;
+  let inputRuntime: InputRuntimeState | undefined;
+  let trackedCrosshair:
+    | {
+        x: number;
+        y: number;
+      }
+    | undefined;
   let lastFrameAtMs: number | undefined;
 
   root.innerHTML = `
     <div class="app-layout">
       <div class="camera-underlay" id="camera-root" aria-hidden="true">
-        <video class="camera-feed" playsinline muted></video>
+        <video class="camera-feed" playsinline muted autoplay></video>
       </div>
       <canvas class="game-canvas"></canvas>
       <div class="overlay-root"></div>
@@ -44,23 +117,19 @@ export const startApp = (root: HTMLDivElement): void => {
   `;
 
   const canvas = root.querySelector<HTMLCanvasElement>(".game-canvas");
+  const cameraRoot = root.querySelector<HTMLDivElement>("#camera-root");
   const overlayRoot = root.querySelector<HTMLDivElement>(".overlay-root");
   const cameraVideo = root.querySelector<HTMLVideoElement>(".camera-feed");
   const debugRoot = root.querySelector<HTMLElement>("#debug-root");
 
-  if (!canvas || !overlayRoot || !cameraVideo || !debugRoot) {
+  if (!canvas || !cameraRoot || !overlayRoot || !cameraVideo || !debugRoot) {
     throw new Error("Missing app shell roots");
   }
 
-  const debugPanel = createDebugPanel({ ...gameConfig.input } satisfies DebugValues);
+  const debugPanel = createDebugPanel(debugValues);
   debugRoot.innerHTML = debugPanel.render();
   debugPanel.bind(debugRoot.querySelectorAll<HTMLInputElement>("[data-debug]"));
 
-  // TODO(codex/issue-9-backend-adapters): codex's wiring will assign
-  // `cameraVideo.srcObject` from `await camera.requestStream()` inside the
-  // camera-ready dispatch, and feed `debugPanel.values` into the hand tracker
-  // and input-mapping loop. The `void` keeps TypeScript silent until then.
-  void cameraVideo;
 
   const ctx = canvas.getContext("2d");
 
@@ -83,14 +152,50 @@ export const startApp = (root: HTMLDivElement): void => {
   };
 
   const stopGameLoop = (): void => {
-    if (frameRequestId === undefined) {
+    if (gameFrameRequestId === undefined) {
       return;
     }
 
-    window.cancelAnimationFrame(frameRequestId);
-    frameRequestId = undefined;
+    window.cancelAnimationFrame(gameFrameRequestId);
+    gameFrameRequestId = undefined;
     lastFrameAtMs = undefined;
   };
+
+  const stopTrackerLoop = (): void => {
+    if (trackingFrameRequestId !== undefined) {
+      window.cancelAnimationFrame(trackingFrameRequestId);
+      trackingFrameRequestId = undefined;
+    }
+
+    trackingCapture = undefined;
+    trackingFramePending = false;
+  };
+
+  const logAudioPlaybackFailure = (label: string) => (error: unknown): void => {
+    console.error(`${label} playback failed`, error);
+  };
+
+  const handleCameraFailure = (error: unknown): void => {
+    stopCountdown();
+    stopTrackerLoop();
+    stopGameLoop();
+    audio?.stopBgm();
+    camera?.stop();
+    publishCameraFeedStream(undefined);
+    trackerPromise = undefined;
+    inputRuntime = undefined;
+    trackedCrosshair = undefined;
+    engine = createGameEngine();
+    state = createInitialAppState();
+    console.error("Camera startup failed", error);
+    render();
+  };
+
+  const getTrackerPromise = (): ReturnType<typeof createMediaPipeHandTracker> =>
+    (trackerPromise ??= createMediaPipeHandTracker().catch((error: unknown) => {
+      trackerPromise = undefined;
+      throw error;
+    }));
 
   const syncScore = (): void => {
     state = reduceAppEvent(state, {
@@ -107,10 +212,12 @@ export const startApp = (root: HTMLDivElement): void => {
       balloons: engine.balloons,
       ...(state.screen === "playing"
         ? {
-            crosshair: {
-              x: canvas.width / 2,
-              y: canvas.height * CROSSHAIR_Y_RATIO
-            }
+            crosshair:
+              trackedCrosshair ??
+              inputRuntime?.crosshair ?? {
+                x: canvas.width / 2,
+                y: canvas.height * CROSSHAIR_Y_RATIO
+              }
           }
         : {})
     });
@@ -119,8 +226,99 @@ export const startApp = (root: HTMLDivElement): void => {
   const finishRound = (): void => {
     syncScore();
     state = reduceAppEvent(state, { type: "TIME_UP" });
+    stopTrackerLoop();
     stopGameLoop();
     render();
+  };
+
+  const processTrackingFrame = async (frameAtMs: number): Promise<void> => {
+    if (trackingFrameRequestId === undefined) {
+      return;
+    }
+
+    trackingFrameRequestId = window.requestAnimationFrame((nextFrameAtMs) => {
+      void processTrackingFrame(nextFrameAtMs);
+    });
+
+    if (trackingFramePending || state.screen !== "playing") {
+      return;
+    }
+
+    const stream = getCameraFeedStream();
+
+    if (!stream) {
+      return;
+    }
+
+    trackingFramePending = true;
+
+    try {
+      trackingCapture ??= createImageCapture(stream);
+
+      const tracker = await getTrackerPromise();
+      const bitmap = await trackingCapture.grabFrame();
+
+      try {
+        const handFrame = await tracker.detect(bitmap, frameAtMs);
+
+        if (!handFrame) {
+          return;
+        }
+
+        const input = mapHandToGameInput(
+          handFrame,
+          { width: canvas.width, height: canvas.height },
+          inputRuntime,
+          debugPanel.values
+        );
+
+        inputRuntime = input.runtime;
+        trackedCrosshair = input.crosshair;
+
+        if (input.shotFired) {
+          void audio?.playShot().catch(logAudioPlaybackFailure("Shot"));
+
+          const scoreBefore = engine.score;
+          registerShot(engine, {
+            x: input.crosshair.x,
+            y: input.crosshair.y,
+            // `hit: true` opts this shot into collision detection inside the engine.
+            hit: true
+          });
+
+          if (engine.score > scoreBefore) {
+            void audio?.playHit().catch(logAudioPlaybackFailure("Hit"));
+          }
+
+          syncScore();
+          render();
+        }
+      } finally {
+        bitmap.close();
+      }
+    } catch (error) {
+      handleCameraFailure(error);
+    } finally {
+      trackingFramePending = false;
+    }
+  };
+
+  const startTrackerLoop = (): void => {
+    if (trackingFrameRequestId !== undefined) {
+      return;
+    }
+
+    trackingFrameRequestId = window.requestAnimationFrame((frameAtMs) => {
+      void processTrackingFrame(frameAtMs);
+    });
+  };
+
+  const handleTimeUp = (): void => {
+    stopTrackerLoop();
+    audio?.stopBgm();
+    void audio?.playTimeout().catch(logAudioPlaybackFailure("Timeout"));
+    void audio?.playResult().catch(logAudioPlaybackFailure("Result"));
+    finishRound();
   };
 
   const tickGameLoop = (frameAtMs: number): void => {
@@ -139,18 +337,18 @@ export const startApp = (root: HTMLDivElement): void => {
     render();
 
     if (engine.timeRemainingMs <= 0) {
-      finishRound();
+      handleTimeUp();
       return;
     }
 
-    frameRequestId = window.requestAnimationFrame(tickGameLoop);
+    gameFrameRequestId = window.requestAnimationFrame(tickGameLoop);
   };
 
   const startPlaying = (): void => {
     stopGameLoop();
     syncScore();
     render();
-    frameRequestId = window.requestAnimationFrame(tickGameLoop);
+    gameFrameRequestId = window.requestAnimationFrame(tickGameLoop);
   };
 
   const startCountdown = (): void => {
@@ -183,7 +381,11 @@ export const startApp = (root: HTMLDivElement): void => {
 
       state = nextState;
       stopGameLoop();
+      inputRuntime = undefined;
+      trackedCrosshair = undefined;
       engine = createGameEngine();
+      void audio?.startBgm().catch(logAudioPlaybackFailure("BGM"));
+      startTrackerLoop();
       startCountdown();
       return;
     }
@@ -196,7 +398,13 @@ export const startApp = (root: HTMLDivElement): void => {
       }
 
       stopCountdown();
+      stopTrackerLoop();
       stopGameLoop();
+      audio?.stopBgm();
+      camera?.stop();
+      publishCameraFeedStream(undefined);
+      inputRuntime = undefined;
+      trackedCrosshair = undefined;
       engine = createGameEngine();
       state = nextState;
       render();
@@ -212,7 +420,29 @@ export const startApp = (root: HTMLDivElement): void => {
     const action = target instanceof Element ? resolveOverlayAction(target, overlayRoot) : undefined;
 
     if (action === "camera") {
-      dispatch({ type: "CAMERA_READY" });
+      audio ??= createAudioController();
+      camera ??= createCameraController();
+      // Prewarm the MediaPipe tracker asynchronously. If this fails (e.g.
+      // missing model asset, CDN hiccup), log and continue: the tracker loop
+      // will retry when gameplay actually starts, and camera-ready should not
+      // depend on tracker readiness.
+      void getTrackerPromise().catch((error: unknown) => {
+        console.error("Tracker prewarm failed; will retry on first frame", error);
+      });
+
+      void camera
+        .requestStream()
+        .then((stream) => {
+          cameraVideo.srcObject = stream;
+          // Autoplay with muted is allowed without a gesture in Chrome; the
+          // promise is ignored because the `muted` attribute covers the
+          // autoplay policy and any exception would only affect playback
+          // visuals, not the state transition.
+          void cameraVideo.play().catch(() => undefined);
+          publishCameraFeedStream(stream);
+          dispatch({ type: "CAMERA_READY" });
+        })
+        .catch(handleCameraFailure);
       return;
     }
 
