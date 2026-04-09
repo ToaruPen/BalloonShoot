@@ -1,8 +1,8 @@
 export const CAMERA_WIDTH = 640;
 export const CAMERA_HEIGHT = 480;
 export const INPUT_SMOOTHING_ALPHA = 0.28;
-export const INPUT_TRIGGER_PULL_THRESHOLD = 0.45;
-export const INPUT_TRIGGER_RELEASE_THRESHOLD = 0.25;
+export const INPUT_TRIGGER_PULL_THRESHOLD = 0.18;
+export const INPUT_TRIGGER_RELEASE_THRESHOLD = 0.1;
 
 export const gameConfig = {
   camera: {

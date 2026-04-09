@@ -4,21 +4,12 @@ import { evaluateGunPose } from "../../../../src/features/input-mapping/evaluate
 import { mapHandToGameInput } from "../../../../src/features/input-mapping/mapHandToGameInput";
 import { gameConfig } from "../../../../src/shared/config/gameConfig";
 import type { HandFrame } from "../../../../src/shared/types/hand";
+import {
+  createThumbTriggerFrame,
+  withThumbTriggerPose
+} from "./thumbTriggerTestHelper";
 
-const frame: HandFrame = {
-  width: 640,
-  height: 480,
-  landmarks: {
-    wrist: { x: 0.4, y: 0.7, z: 0 },
-    indexTip: { x: 0.5, y: 0.3, z: 0 },
-    indexMcp: { x: 0.47, y: 0.48, z: 0 },
-    thumbTip: { x: 0.34, y: 0.55, z: 0 },
-    thumbIp: { x: 0.37, y: 0.57, z: 0 },
-    middleTip: { x: 0.45, y: 0.64, z: 0 },
-    ringTip: { x: 0.42, y: 0.66, z: 0 },
-    pinkyTip: { x: 0.39, y: 0.67, z: 0 }
-  }
-};
+const frame: HandFrame = createThumbTriggerFrame("open");
 
 describe("mapHandToGameInput", () => {
   it("detects a gun pose using hand-size-normalized curl distance", () => {
@@ -73,26 +64,21 @@ describe("mapHandToGameInput", () => {
   });
 
   it("only emits a shot when a loose gun pose and trigger pull occur", () => {
-    const first = mapHandToGameInput(frame, { width: 1280, height: 720 }, undefined);
+    const openFrame = frame;
+    const pulledFrame = withThumbTriggerPose(frame, "pulled");
+
+    const first = mapHandToGameInput(
+      openFrame,
+      { width: 1280, height: 720 },
+      undefined
+    );
     const second = mapHandToGameInput(
-      {
-        ...frame,
-        landmarks: {
-          ...frame.landmarks,
-          thumbTip: { x: 0.52, y: 0.62, z: 0 }
-        }
-      },
+      pulledFrame,
       { width: 1280, height: 720 },
       first.runtime
     );
     const third = mapHandToGameInput(
-      {
-        ...frame,
-        landmarks: {
-          ...frame.landmarks,
-          thumbTip: { x: 0.52, y: 0.62, z: 0 }
-        }
-      },
+      pulledFrame,
       { width: 1280, height: 720 },
       second.runtime
     );
@@ -103,13 +89,15 @@ describe("mapHandToGameInput", () => {
   });
 
   it("does not emit a shot on open -> pulled when gun pose is inactive", () => {
+    const openThumbFrame = withThumbTriggerPose(frame, "open");
+    const pulledThumbFrame = withThumbTriggerPose(frame, "pulled");
+
     const nonGunOpen = mapHandToGameInput(
       {
-        ...frame,
+        ...openThumbFrame,
         landmarks: {
-          ...frame.landmarks,
+          ...openThumbFrame.landmarks,
           indexTip: { x: 0.5, y: 0.7, z: 0 },
-          thumbTip: { x: 0.34, y: 0.55, z: 0 }
         }
       },
       { width: 1280, height: 720 },
@@ -118,11 +106,10 @@ describe("mapHandToGameInput", () => {
 
     const nonGunPulled = mapHandToGameInput(
       {
-        ...frame,
+        ...pulledThumbFrame,
         landmarks: {
-          ...frame.landmarks,
+          ...pulledThumbFrame.landmarks,
           indexTip: { x: 0.5, y: 0.7, z: 0 },
-          thumbTip: { x: 0.52, y: 0.62, z: 0 }
         }
       },
       { width: 1280, height: 720 },
@@ -169,10 +156,13 @@ describe("mapHandToGameInput", () => {
   });
 
   it("accepts runtime tuning values for smoothing and trigger hysteresis", () => {
+    const pulledFrame = withThumbTriggerPose(frame, "pulled");
+    const latchedFrame = withThumbTriggerPose(frame, "latched");
+
     const tuning = {
       smoothingAlpha: 0.5,
-      triggerPullThreshold: 0.45,
-      triggerReleaseThreshold: 0.25
+      triggerPullThreshold: 0.18,
+      triggerReleaseThreshold: 0.1
     };
     const first = mapHandToGameInput(frame, { width: 1280, height: 720 }, undefined, tuning);
     const second = mapHandToGameInput(
@@ -181,7 +171,7 @@ describe("mapHandToGameInput", () => {
         landmarks: {
           ...frame.landmarks,
           indexTip: { x: 0.8, y: 0.2, z: 0 },
-          thumbTip: { x: 0.52, y: 0.62, z: 0 }
+          thumbTip: pulledFrame.landmarks.thumbTip
         }
       },
       { width: 1280, height: 720 },
@@ -190,10 +180,9 @@ describe("mapHandToGameInput", () => {
     );
     const third = mapHandToGameInput(
       {
-        ...frame,
+        ...latchedFrame,
         landmarks: {
-          ...frame.landmarks,
-          thumbTip: { x: 0.46, y: 0.6, z: 0 }
+          ...latchedFrame.landmarks
         }
       },
       { width: 1280, height: 720 },

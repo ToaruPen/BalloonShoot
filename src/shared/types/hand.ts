@@ -4,6 +4,13 @@ export interface Point3D {
   z: number;
 }
 
+export interface HandednessCategory {
+  score: number;
+  index: number;
+  categoryName: string;
+  displayName: string;
+}
+
 /**
  * Hand landmarks are normalized to the source frame.
  * Origin is the top-left of the image, x increases to the right, y increases downward,
@@ -12,6 +19,7 @@ export interface Point3D {
 export interface HandFrame {
   width: number;
   height: number;
+  handedness?: HandednessCategory[];
   landmarks: {
     wrist: Point3D;
     indexTip: Point3D;

@@ -19,5 +19,7 @@
 
 - Keep gameplay, input mapping, rendering, and browser adapters separate.
 - Treat `lint`, `typecheck`, and `test` as blocking checks once the toolchain exists.
+- Resolve review comments after the corresponding fix is implemented and verified.
+- Create pull requests as ready for review by default; use draft only when explicitly requested.
 - Write every `AGENTS.md` in English and add a sibling `CLAUDE.md` symlink in the same directory.
 - Add more scoped guidance in the directory where the work happens instead of expanding this file.

@@ -1,5 +1,5 @@
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
-import type { HandFrame, Point3D } from "../../shared/types/hand";
+import type { HandFrame, HandednessCategory, Point3D } from "../../shared/types/hand";
 
 interface LandmarkLike {
   x: number;
@@ -7,8 +7,16 @@ interface LandmarkLike {
   z: number;
 }
 
+interface HandednessLike {
+  score: number;
+  index: number;
+  categoryName: string;
+  displayName: string;
+}
+
 interface HandLandmarkerResultLike {
   landmarks: LandmarkLike[][];
+  handedness?: HandednessLike[][];
 }
 
 export interface MediaPipeHandTracker {
@@ -53,6 +61,9 @@ const toHandFrame = (
   const middleTip = toPoint3D(landmarks[HAND_LANDMARK_INDEX.middleTip]);
   const ringTip = toPoint3D(landmarks[HAND_LANDMARK_INDEX.ringTip]);
   const pinkyTip = toPoint3D(landmarks[HAND_LANDMARK_INDEX.pinkyTip]);
+  const selectedHandedness = result.handedness?.[0];
+  const handedness: HandednessCategory[] | undefined =
+    selectedHandedness !== undefined && selectedHandedness.length > 0 ? selectedHandedness : undefined;
 
   if (!wrist || !thumbIp || !thumbTip || !indexMcp || !indexTip || !middleTip || !ringTip || !pinkyTip) {
     return undefined;
@@ -61,6 +72,7 @@ const toHandFrame = (
   return {
     width: sourceSize.width,
     height: sourceSize.height,
+    ...(handedness ? { handedness } : {}),
     landmarks: {
       wrist,
       thumbIp,
