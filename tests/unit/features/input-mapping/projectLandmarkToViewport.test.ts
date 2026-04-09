@@ -2,6 +2,36 @@ import { describe, expect, it } from "vitest";
 import { projectLandmarkToViewport } from "../../../../src/features/input-mapping/projectLandmarkToViewport";
 
 const normalizedPoint = { x: 0.25, y: 0.25 };
+const fallbackPoint = { x: 0, y: 0 };
+const validSourceSize = { width: 640, height: 480 };
+const validViewportSize = { width: 1280, height: 720 };
+
+const invalidSourceSizes = [
+  { width: 0, height: 480 },
+  { width: -1, height: 480 },
+  { width: Number.NaN, height: 480 },
+  { width: Number.POSITIVE_INFINITY, height: 480 }
+];
+
+const invalidViewportSizes = [
+  { width: 1280, height: 0 },
+  { width: 1280, height: -1 },
+  { width: Number.NaN, height: 720 },
+  { width: 1280, height: Number.POSITIVE_INFINITY }
+];
+
+const sanitizedPointExpectations = [
+  { point: { x: Number.NaN, y: 0.25 }, expected: { x: 0, y: 120 } },
+  {
+    point: { x: Number.POSITIVE_INFINITY, y: 0.25 },
+    expected: { x: 0, y: 120 }
+  },
+  { point: { x: 0.25, y: Number.NaN }, expected: { x: 320, y: 0 } },
+  {
+    point: { x: 0.25, y: Number.NEGATIVE_INFINITY },
+    expected: { x: 320, y: 0 }
+  }
+];
 
 describe("projectLandmarkToViewport", () => {
   it("mirrors points without cropping when source and viewport aspect ratios match", () => {
@@ -49,67 +79,31 @@ describe("projectLandmarkToViewport", () => {
     ).toEqual({ x: 720, y: 0 });
   });
 
-  it("falls back deterministically for invalid source dimensions", () => {
-    expect(
-      projectLandmarkToViewport(
-        normalizedPoint,
-        { width: 0, height: 480 },
-        { width: 1280, height: 720 }
-      )
-    ).toEqual({ x: 0, y: 0 });
-    expect(
-      projectLandmarkToViewport(
-        normalizedPoint,
-        { width: -1, height: 480 },
-        { width: 1280, height: 720 }
-      )
-    ).toEqual({ x: 0, y: 0 });
-    expect(
-      projectLandmarkToViewport(
-        normalizedPoint,
-        { width: Number.NaN, height: 480 },
-        { width: 1280, height: 720 }
-      )
-    ).toEqual({ x: 0, y: 0 });
-    expect(
-      projectLandmarkToViewport(
-        normalizedPoint,
-        { width: Number.POSITIVE_INFINITY, height: 480 },
-        { width: 1280, height: 720 }
-      )
-    ).toEqual({ x: 0, y: 0 });
-  });
+  it.each(invalidSourceSizes)(
+    "falls back deterministically for invalid source dimensions: %o",
+    (sourceSize) => {
+      expect(
+        projectLandmarkToViewport(
+          normalizedPoint,
+          sourceSize,
+          validViewportSize
+        )
+      ).toEqual(fallbackPoint);
+    }
+  );
 
-  it("falls back deterministically for invalid viewport dimensions", () => {
-    expect(
-      projectLandmarkToViewport(
-        normalizedPoint,
-        { width: 640, height: 480 },
-        { width: 1280, height: 0 }
-      )
-    ).toEqual({ x: 0, y: 0 });
-    expect(
-      projectLandmarkToViewport(
-        normalizedPoint,
-        { width: 640, height: 480 },
-        { width: 1280, height: -1 }
-      )
-    ).toEqual({ x: 0, y: 0 });
-    expect(
-      projectLandmarkToViewport(
-        normalizedPoint,
-        { width: 640, height: 480 },
-        { width: Number.NaN, height: 720 }
-      )
-    ).toEqual({ x: 0, y: 0 });
-    expect(
-      projectLandmarkToViewport(
-        normalizedPoint,
-        { width: 640, height: 480 },
-        { width: 1280, height: Number.POSITIVE_INFINITY }
-      )
-    ).toEqual({ x: 0, y: 0 });
-  });
+  it.each(invalidViewportSizes)(
+    "falls back deterministically for invalid viewport dimensions: %o",
+    (viewportSize) => {
+      expect(
+        projectLandmarkToViewport(
+          normalizedPoint,
+          validSourceSize,
+          viewportSize
+        )
+      ).toEqual(fallbackPoint);
+    }
+  );
 
   it("falls back deterministically when both source and viewport inputs are invalid", () => {
     expect(
@@ -118,6 +112,25 @@ describe("projectLandmarkToViewport", () => {
         { width: Number.NaN, height: 0 },
         { width: -1, height: Number.POSITIVE_INFINITY }
       )
-    ).toEqual({ x: 0, y: 0 });
+    ).toEqual(fallbackPoint);
+  });
+
+  it.each(sanitizedPointExpectations)(
+    "sanitizes non-finite normalized points before projection: %o",
+    ({ point, expected }) => {
+      expect(
+        projectLandmarkToViewport(point, validSourceSize, validViewportSize)
+      ).toEqual(expected);
+    }
+  );
+
+  it("sanitizes both normalized axes when both point values are invalid", () => {
+    expect(
+      projectLandmarkToViewport(
+        { x: Number.NaN, y: Number.POSITIVE_INFINITY },
+        validSourceSize,
+        validViewportSize
+      )
+    ).toEqual(fallbackPoint);
   });
 });

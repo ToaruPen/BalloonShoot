@@ -23,6 +23,9 @@ const isPositiveFinite = (value: number): boolean =>
 const isValidSize = (size: ViewportSize): boolean =>
   isPositiveFinite(size.width) && isPositiveFinite(size.height);
 
+const sanitizeNormalized = (value: number): number =>
+  clamp(Number.isFinite(value) ? value : 0, 0, 1);
+
 export const projectLandmarkToViewport = (
   point: NormalizedPoint,
   sourceSize: ViewportSize,
@@ -33,8 +36,8 @@ export const projectLandmarkToViewport = (
     return { x: 0, y: 0 };
   }
 
-  const normalizedX = clamp(point.x, 0, 1);
-  const normalizedY = clamp(point.y, 0, 1);
+  const normalizedX = sanitizeNormalized(point.x);
+  const normalizedY = sanitizeNormalized(point.y);
   const scale = Math.max(
     viewportSize.width / sourceSize.width,
     viewportSize.height / sourceSize.height
