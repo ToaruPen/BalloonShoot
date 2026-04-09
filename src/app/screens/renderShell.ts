@@ -5,7 +5,7 @@ const renderScreenBody = (state: AppState): string => {
     case "permission":
       return `
         <p class="screen-title">カメラ準備</p>
-        <p class="screen-copy">次の issue で本物のカメラ接続を入れます。今はシェル遷移を確認します。</p>
+        <p class="screen-copy">カメラを使ってバルーンを撃ちます。準備ボタンを押してください。</p>
         <button class="screen-button" data-action="camera">カメラを準備</button>
       `;
     case "ready":
@@ -22,7 +22,7 @@ const renderScreenBody = (state: AppState): string => {
     case "playing":
       return `
         <p class="screen-title">プレイ中</p>
-        <p class="screen-copy">親指トリガーとクロスヘア連携は次の slice で接続します。</p>
+        <p class="screen-copy">手で銃の形を作って風船を撃とう！</p>
       `;
     case "result":
       return `

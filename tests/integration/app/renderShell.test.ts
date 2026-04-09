@@ -12,6 +12,14 @@ const createState = (overrides: Partial<AppState>): AppState => ({
 });
 
 describe("renderShell", () => {
+  it("renders live camera and gameplay guidance copy", () => {
+    const permissionHtml = renderShell(createState({ screen: "permission" }));
+    const playingHtml = renderShell(createState({ screen: "playing" }));
+
+    expect(permissionHtml).toContain("カメラを使ってバルーンを撃ちます。準備ボタンを押してください。");
+    expect(playingHtml).toContain("手で銃の形を作って風船を撃とう！");
+  });
+
   it("renders the ready screen start action", () => {
     const html = renderShell(createState({ screen: "ready" }));
 
