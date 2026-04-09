@@ -17,12 +17,22 @@ export interface ProjectLandmarkOptions {
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
 
+const isPositiveFinite = (value: number): boolean =>
+  Number.isFinite(value) && value > 0;
+
+const isValidSize = (size: ViewportSize): boolean =>
+  isPositiveFinite(size.width) && isPositiveFinite(size.height);
+
 export const projectLandmarkToViewport = (
   point: NormalizedPoint,
   sourceSize: ViewportSize,
   viewportSize: ViewportSize,
   options: ProjectLandmarkOptions = {}
 ): CrosshairPoint => {
+  if (!isValidSize(sourceSize) || !isValidSize(viewportSize)) {
+    return { x: 0, y: 0 };
+  }
+
   const normalizedX = clamp(point.x, 0, 1);
   const normalizedY = clamp(point.y, 0, 1);
   const scale = Math.max(
