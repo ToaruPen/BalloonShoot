@@ -3,6 +3,10 @@ import type { HandFrame } from "../../shared/types/hand";
 import { smoothCrosshair, type CrosshairPoint } from "./createCrosshairSmoother";
 import { evaluateGunPose } from "./evaluateGunPose";
 import {
+  projectLandmarkToViewport,
+  type ViewportSize
+} from "./projectLandmarkToViewport";
+import {
   evaluateThumbTrigger,
   type TriggerState,
   type TriggerTuning
@@ -37,16 +41,16 @@ export interface InputTuning extends TriggerTuning {
 
 export const mapHandToGameInput = (
   frame: HandFrame,
-  canvasSize: { width: number; height: number },
+  viewportSize: ViewportSize,
   runtime: InputRuntimeState | undefined,
   tuning: InputTuning = gameConfig.input
 ): GameInputFrame => {
-  const indexTipX = Math.min(Math.max(frame.landmarks.indexTip.x, 0), 1);
-  const indexTipY = Math.min(Math.max(frame.landmarks.indexTip.y, 0), 1);
-  const rawCrosshair = {
-    x: (1 - indexTipX) * canvasSize.width,
-    y: indexTipY * canvasSize.height
-  };
+  const rawCrosshair = projectLandmarkToViewport(
+    frame.landmarks.indexTip,
+    { width: frame.width, height: frame.height },
+    viewportSize,
+    { mirrorX: true }
+  );
   const crosshair = smoothCrosshair(runtime?.crosshair, rawCrosshair, tuning.smoothingAlpha);
   const previousTriggerState = runtime?.triggerState ?? "open";
   const previousRawTriggerState = runtime?.rawTriggerState ?? previousTriggerState;
