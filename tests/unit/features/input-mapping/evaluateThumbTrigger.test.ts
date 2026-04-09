@@ -31,11 +31,6 @@ const DIRECT_PULLED_LANDMARKS: HandFrame["landmarks"] = {
   thumbTip: { x: 0.425, y: 0.53, z: 0 }
 };
 
-const mirrorLandmarks = (landmarks: HandFrame["landmarks"]): HandFrame["landmarks"] =>
-  Object.fromEntries(
-    Object.entries(landmarks).map(([key, point]) => [key, { ...point, x: 1 - point.x }])
-  ) as HandFrame["landmarks"];
-
 describe("evaluateThumbTrigger", () => {
   it("keeps the same decision across hand scales for the same normalized projection", () => {
     const openSmall = createThumbTriggerFrame("open", { scale: 0.85 });
@@ -68,14 +63,8 @@ describe("evaluateThumbTrigger", () => {
       height: 480,
       landmarks: DIRECT_PULLED_LANDMARKS
     };
-    const mirroredOpen: HandFrame = {
-      ...open,
-      landmarks: mirrorLandmarks(open.landmarks)
-    };
-    const mirroredPulled: HandFrame = {
-      ...pulled,
-      landmarks: mirrorLandmarks(pulled.landmarks)
-    };
+    const mirroredOpen = mirrorThumbTriggerFrame(open);
+    const mirroredPulled = mirrorThumbTriggerFrame(pulled);
 
     expect(evaluateThumbTrigger(open, "open", tuning)).toBe("open");
     expect(evaluateThumbTrigger(pulled, "open", tuning)).toBe("pulled");

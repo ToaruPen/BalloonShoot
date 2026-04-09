@@ -160,6 +160,9 @@ describe("createDebugPanel", () => {
     pull.fireInput();
     expect(panel.values.triggerPullThreshold).toBeCloseTo(0.05);
 
+    // Release clamps to its own max (0.25) and then to pull - gap (0.05 - 0.01).
+    pull.value = "0.05";
+    pull.fireInput();
     release.value = "0.5";
     release.fireInput();
     expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.04);

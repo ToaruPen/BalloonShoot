@@ -106,6 +106,17 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
     input.value = formatForInput(key, values[key]);
   };
 
+  const normalizeAndSyncThresholds = (): void => {
+    const normalized = normalizeTriggerThresholds(
+      values.triggerPullThreshold,
+      values.triggerReleaseThreshold
+    );
+    values.triggerPullThreshold = normalized.triggerPullThreshold;
+    values.triggerReleaseThreshold = normalized.triggerReleaseThreshold;
+    syncInputValue("triggerPullThreshold");
+    syncInputValue("triggerReleaseThreshold");
+  };
+
   const bind = (inputs: Iterable<DebugInputElement>): void => {
     for (const input of inputs) {
       const boundKey = input.dataset.debug;
@@ -130,26 +141,8 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
         values[key] = clampToMeta(key, parsed);
         syncInputValue(key);
 
-        if (key === "triggerPullThreshold") {
-          const normalized = normalizeTriggerThresholds(
-            values.triggerPullThreshold,
-            values.triggerReleaseThreshold
-          );
-          values.triggerPullThreshold = normalized.triggerPullThreshold;
-          values.triggerReleaseThreshold = normalized.triggerReleaseThreshold;
-          syncInputValue("triggerPullThreshold");
-          syncInputValue("triggerReleaseThreshold");
-        }
-
-        if (key === "triggerReleaseThreshold") {
-          const normalized = normalizeTriggerThresholds(
-            values.triggerPullThreshold,
-            values.triggerReleaseThreshold
-          );
-          values.triggerPullThreshold = normalized.triggerPullThreshold;
-          values.triggerReleaseThreshold = normalized.triggerReleaseThreshold;
-          syncInputValue("triggerPullThreshold");
-          syncInputValue("triggerReleaseThreshold");
+        if (key === "triggerPullThreshold" || key === "triggerReleaseThreshold") {
+          normalizeAndSyncThresholds();
         }
       });
     }
