@@ -126,7 +126,7 @@ export const startApp = (
     throw new Error("Missing app shell roots");
   }
 
-  const debugPanel = createDebugPanel({ ...gameConfig.input } satisfies DebugValues);
+  const debugPanel = createDebugPanel(debugValues);
   debugRoot.innerHTML = debugPanel.render();
   debugPanel.bind(debugRoot.querySelectorAll<HTMLInputElement>("[data-debug]"));
 
@@ -269,7 +269,7 @@ export const startApp = (
           handFrame,
           { width: canvas.width, height: canvas.height },
           inputRuntime,
-          debugValues
+          debugPanel.values
         );
 
         inputRuntime = input.runtime;

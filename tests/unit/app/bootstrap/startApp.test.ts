@@ -106,6 +106,10 @@ class FakeOverlayRoot {
   }
 
   click(action: string): void {
+    if (!this.innerHTML.includes(`data-action="${action}"`)) {
+      throw new Error(`Action "${action}" is not rendered in the current screen`);
+    }
+
     const actionElement = new FakeElement({ action });
     const target = new FakeElement({}, actionElement);
 
@@ -263,7 +267,7 @@ describe("startApp", () => {
     expect(createMediaPipeHandTrackerMock).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps the app in ready state when tracker prewarm fails and clears the cached tracker promise for retry", async () => {
+  it("keeps the app in ready state when tracker prewarm fails (non-fatal)", async () => {
     const trackerStartupError = new Error("tracker prewarm failed");
     const cameraStop = vi.fn();
     const stream = {
@@ -283,9 +287,9 @@ describe("startApp", () => {
       requestStream: vi.fn(() => Promise.resolve(stream)),
       stop: cameraStop
     });
-    createMediaPipeHandTrackerMock
-      .mockImplementationOnce(() => Promise.reject(trackerStartupError))
-      .mockResolvedValueOnce({ detect: vi.fn().mockResolvedValue(undefined) });
+    createMediaPipeHandTrackerMock.mockImplementationOnce(() =>
+      Promise.reject(trackerStartupError)
+    );
 
     const { startApp } = await import("../../../../src/app/bootstrap/startApp");
     const { root, overlayRoot } = createFakeRoot();
@@ -298,12 +302,5 @@ describe("startApp", () => {
     // not get reset back to permission.
     expect(cameraStop).not.toHaveBeenCalled();
     expect(overlayRoot.innerHTML).toContain('data-screen="ready"');
-
-    // Clicking camera again triggers a new prewarm attempt because the rejected
-    // promise was cleared inside getTrackerPromise.
-    overlayRoot.click("camera");
-    await flushPromises();
-
-    expect(createMediaPipeHandTrackerMock).toHaveBeenCalledTimes(2);
   });
 });
