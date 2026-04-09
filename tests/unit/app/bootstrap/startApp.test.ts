@@ -163,46 +163,37 @@ describe("startApp", () => {
     let nextAnimationFrameId = 1;
     const animationFrames = new Map<number, FrameRequestCallback>();
 
-    Object.defineProperty(globalThis, "Element", {
-      configurable: true,
-      value: FakeElement
-    });
+    vi.stubGlobal("Element", FakeElement);
 
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: {
-        innerWidth: 1280,
-        innerHeight: 720,
-        addEventListener: vi.fn(),
-        setInterval: vi.fn(() => 1),
-        clearInterval: vi.fn(),
-        requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
-          const id = nextAnimationFrameId;
-          nextAnimationFrameId += 1;
-          animationFrames.set(id, callback);
-          return id;
-        }),
-        cancelAnimationFrame: vi.fn((id: number) => {
-          animationFrames.delete(id);
-        }),
-        ImageCapture: class {
-          grabFrame(): Promise<ImageBitmap> {
-            return Promise.resolve({
-              width: 640,
-              height: 480,
-              close: vi.fn()
-            } as unknown as ImageBitmap);
-          }
+    vi.stubGlobal("window", {
+      innerWidth: 1280,
+      innerHeight: 720,
+      addEventListener: vi.fn(),
+      setInterval: vi.fn(() => 1),
+      clearInterval: vi.fn(),
+      requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
+        const id = nextAnimationFrameId;
+        nextAnimationFrameId += 1;
+        animationFrames.set(id, callback);
+        return id;
+      }),
+      cancelAnimationFrame: vi.fn((id: number) => {
+        animationFrames.delete(id);
+      }),
+      ImageCapture: class {
+        grabFrame(): Promise<ImageBitmap> {
+          return Promise.resolve({
+            width: 640,
+            height: 480,
+            close: vi.fn()
+          } as unknown as ImageBitmap);
         }
       }
     });
 
-    Object.defineProperty(globalThis, "console", {
-      configurable: true,
-      value: {
-        ...console,
-        error: vi.fn()
-      }
+    vi.stubGlobal("console", {
+      ...console,
+      error: vi.fn()
     });
   });
 

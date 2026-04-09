@@ -384,7 +384,7 @@ export const startApp = (
       inputRuntime = undefined;
       trackedCrosshair = undefined;
       engine = createGameEngine();
-      void audio?.startBgm();
+      void audio?.startBgm().catch(logAudioPlaybackFailure("BGM"));
       startTrackerLoop();
       startCountdown();
       return;
