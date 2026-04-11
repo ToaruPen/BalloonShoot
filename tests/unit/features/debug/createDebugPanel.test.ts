@@ -10,7 +10,9 @@ import {
 const sampleInitial: DebugValues = {
   smoothingAlpha: 0.28,
   triggerPullThreshold: 0.18,
-  triggerReleaseThreshold: 0.1
+  triggerReleaseThreshold: 0.1,
+  handFilterMinCutoff: 1.0,
+  handFilterBeta: 0
 };
 
 interface FakeInput extends DebugInputElement {
@@ -54,7 +56,9 @@ const sampleTelemetry: DebugTelemetry = {
   openFrames: 0,
   pulledFrames: 1,
   trackingPresentFrames: 4,
-  nonGunPoseFrames: 0
+  nonGunPoseFrames: 0,
+  rawIndexJitter: 0.12,
+  filterIndexJitter: 0.03
 };
 
 describe("createDebugPanel", () => {
@@ -219,11 +223,92 @@ describe("createDebugPanel", () => {
     const panel = createDebugPanel({
       smoothingAlpha: 0.05,
       triggerPullThreshold: 0.06,
-      triggerReleaseThreshold: 0.25
+      triggerReleaseThreshold: 0.25,
+      handFilterMinCutoff: 1.0,
+      handFilterBeta: 0
     });
 
     expect(panel.values.smoothingAlpha).toBeCloseTo(0.1);
     expect(panel.values.triggerPullThreshold).toBeCloseTo(0.06);
     expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.05);
+  });
+
+  it("renders sliders for the hand-filter keys with their meta bounds", () => {
+    const panel = createDebugPanel(sampleInitial);
+
+    const html = panel.render();
+
+    expect(html).toContain('data-debug="handFilterMinCutoff"');
+    expect(html).toContain('data-debug="handFilterBeta"');
+    expect(html).toContain('min="0.1"');
+    expect(html).toContain('max="5"');
+    expect(html).toContain('min="0"');
+    expect(html).toContain('max="0.05"');
+    expect(html).toContain('step="0.001"');
+  });
+
+  it("updates hand-filter values when bound inputs fire", () => {
+    const panel = createDebugPanel(sampleInitial);
+    const minCutoff = createFakeInput("handFilterMinCutoff", "1");
+    const beta = createFakeInput("handFilterBeta", "0");
+
+    panel.bind([minCutoff, beta]);
+
+    minCutoff.value = "2.5";
+    minCutoff.fireInput();
+    beta.value = "0.03";
+    beta.fireInput();
+
+    expect(panel.values.handFilterMinCutoff).toBeCloseTo(2.5);
+    expect(panel.values.handFilterBeta).toBeCloseTo(0.03);
+  });
+
+  it("clamps hand-filter values to their slider bounds", () => {
+    const panel = createDebugPanel(sampleInitial);
+    const minCutoff = createFakeInput("handFilterMinCutoff", "1");
+    const beta = createFakeInput("handFilterBeta", "0");
+
+    panel.bind([minCutoff, beta]);
+
+    minCutoff.value = "99";
+    minCutoff.fireInput();
+    expect(panel.values.handFilterMinCutoff).toBeCloseTo(5);
+
+    minCutoff.value = "0.001";
+    minCutoff.fireInput();
+    expect(panel.values.handFilterMinCutoff).toBeCloseTo(0.1);
+
+    beta.value = "1";
+    beta.fireInput();
+    expect(panel.values.handFilterBeta).toBeCloseTo(0.05);
+
+    beta.value = "-1";
+    beta.fireInput();
+    expect(panel.values.handFilterBeta).toBeCloseTo(0);
+  });
+
+  it("clamps hand-filter initial values so untrusted config cannot render outside bounds", () => {
+    const panel = createDebugPanel({
+      smoothingAlpha: 0.28,
+      triggerPullThreshold: 0.18,
+      triggerReleaseThreshold: 0.1,
+      handFilterMinCutoff: 20,
+      handFilterBeta: -5
+    });
+
+    expect(panel.values.handFilterMinCutoff).toBeCloseTo(5);
+    expect(panel.values.handFilterBeta).toBeCloseTo(0);
+  });
+
+  it("renders raw and filtered index-tip jitter telemetry into bound outputs", () => {
+    const panel = createDebugPanel(sampleInitial);
+    const rawJitterOutput = createFakeOutput("rawIndexJitter");
+    const filterJitterOutput = createFakeOutput("filterIndexJitter");
+
+    panel.bind([], [rawJitterOutput, filterJitterOutput]);
+    panel.setTelemetry(sampleTelemetry);
+
+    expect(rawJitterOutput.textContent).toBe("0.12");
+    expect(filterJitterOutput.textContent).toBe("0.03");
   });
 });

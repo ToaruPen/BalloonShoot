@@ -2,6 +2,8 @@ export interface DebugValues {
   smoothingAlpha: number;
   triggerPullThreshold: number;
   triggerReleaseThreshold: number;
+  handFilterMinCutoff: number;
+  handFilterBeta: number;
 }
 
 export interface DebugInputElement {
@@ -25,6 +27,8 @@ export interface DebugTelemetry {
   pulledFrames: number;
   trackingPresentFrames: number;
   nonGunPoseFrames: number;
+  rawIndexJitter: number;
+  filterIndexJitter: number;
 }
 
 interface DebugPanel {
@@ -44,14 +48,23 @@ interface DebugControlMeta {
   step: number;
 }
 
-type DebugOutputKey = "phase" | "rejectReason" | "trigger" | "gunPose" | "counters";
+type DebugOutputKey =
+  | "phase"
+  | "rejectReason"
+  | "trigger"
+  | "gunPose"
+  | "counters"
+  | "rawIndexJitter"
+  | "filterIndexJitter";
 
 const HYSTERESIS_GAP = 0.01;
 
 const DEBUG_KEYS = [
   "smoothingAlpha",
   "triggerPullThreshold",
-  "triggerReleaseThreshold"
+  "triggerReleaseThreshold",
+  "handFilterMinCutoff",
+  "handFilterBeta"
 ] as const satisfies readonly (keyof DebugValues)[];
 
 const DEBUG_KEY_SET: ReadonlySet<string> = new Set(DEBUG_KEYS);
@@ -59,7 +72,9 @@ const DEBUG_KEY_SET: ReadonlySet<string> = new Set(DEBUG_KEYS);
 const DEBUG_META: Record<keyof DebugValues, DebugControlMeta> = {
   smoothingAlpha: { label: "Smoothing", min: 0.1, max: 0.6, step: 0.01 },
   triggerPullThreshold: { label: "Pull", min: 0.05, max: 0.4, step: 0.01 },
-  triggerReleaseThreshold: { label: "Release", min: 0.02, max: 0.25, step: 0.01 }
+  triggerReleaseThreshold: { label: "Release", min: 0.02, max: 0.25, step: 0.01 },
+  handFilterMinCutoff: { label: "MinCutoff", min: 0.1, max: 5.0, step: 0.1 },
+  handFilterBeta: { label: "Beta", min: 0.0, max: 0.05, step: 0.001 }
 };
 
 const DEBUG_OUTPUT_META: Record<DebugOutputKey, string> = {
@@ -67,7 +82,9 @@ const DEBUG_OUTPUT_META: Record<DebugOutputKey, string> = {
   rejectReason: "Reject",
   trigger: "Trigger",
   gunPose: "Pose",
-  counters: "Counts"
+  counters: "Counts",
+  rawIndexJitter: "RawJtr",
+  filterIndexJitter: "FiltJtr"
 };
 
 const DEBUG_OUTPUT_KEYS = Object.keys(DEBUG_OUTPUT_META) as DebugOutputKey[];
@@ -114,6 +131,10 @@ const formatTelemetryOutput = (
       return formatConfidence(telemetry.gunPoseConfidence);
     case "counters":
       return `open=${String(telemetry.openFrames)} pull=${String(telemetry.pulledFrames)} track=${String(telemetry.trackingPresentFrames)} pose=${String(telemetry.nonGunPoseFrames)}`;
+    case "rawIndexJitter":
+      return formatConfidence(telemetry.rawIndexJitter);
+    case "filterIndexJitter":
+      return formatConfidence(telemetry.filterIndexJitter);
   }
 };
 
@@ -139,6 +160,8 @@ const normalizeTriggerThresholds = (
 export const createDebugPanel = (initial: DebugValues): DebugPanel => {
   const values: DebugValues = {
     smoothingAlpha: clampToMeta("smoothingAlpha", initial.smoothingAlpha),
+    handFilterMinCutoff: clampToMeta("handFilterMinCutoff", initial.handFilterMinCutoff),
+    handFilterBeta: clampToMeta("handFilterBeta", initial.handFilterBeta),
     ...normalizeTriggerThresholds(
       initial.triggerPullThreshold,
       initial.triggerReleaseThreshold
