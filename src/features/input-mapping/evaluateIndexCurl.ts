@@ -79,8 +79,18 @@ const classify = (
       }
       return "curled";
     case "partial":
+      // Spec D3: partial → extended needs the hysteresis gap to prevent
+      // single-frame flicker re-arming after a freeze.
+      if (ratio >= extendedReturnGate) {
+        return "extended";
+      }
+      if (ratio < curledThreshold) {
+        return "curled";
+      }
+      return "partial";
     case undefined:
     default:
+      // Cold start: classify by raw thresholds without a gate.
       if (ratio >= extendedThreshold) {
         return "extended";
       }

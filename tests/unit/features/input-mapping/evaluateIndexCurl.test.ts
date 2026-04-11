@@ -56,6 +56,12 @@ describe("measureIndexCurl", () => {
     expect(measure(1.25, "partial").rawCurlState).toBe("extended");
   });
 
+  it("does NOT transition partial → extended inside the hysteresis gap (1.18 < 1.20)", () => {
+    // Spec D3 requires a 0.05 gap on the partial → extended boundary so a single
+    // noisy frame at 1.16-1.19 cannot re-arm after a freeze.
+    expect(measure(1.18, "partial").rawCurlState).toBe("partial");
+  });
+
   it("normalises by handScale so the same ratio gives the same state across hand sizes", () => {
     expect(measure(0.55, undefined, { handScale: 0.1 }).rawCurlState).toBe("curled");
     expect(measure(0.55, undefined, { handScale: 0.3 }).rawCurlState).toBe("curled");
