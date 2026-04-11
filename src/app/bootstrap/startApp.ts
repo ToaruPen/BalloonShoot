@@ -347,6 +347,8 @@ export const startApp = (
         );
 
         if (input.runtime.phase === "tracking_lost") {
+          rawJitterTracker.reset();
+          filterJitterTracker.reset();
           render();
         }
 

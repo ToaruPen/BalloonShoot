@@ -565,6 +565,81 @@ describe("startApp", () => {
     ]);
   });
 
+  it("clears landmark jitter when tracking is lost before measuring reacquired hands", async () => {
+    const firstFrame = withThumbTriggerPose(
+      createThumbTriggerFrame("open"),
+      "open"
+    );
+    const reacquiredBaseFrame = createThumbTriggerFrame("open");
+    const reacquiredFrame = withThumbTriggerPose(
+      {
+        ...reacquiredBaseFrame,
+        landmarks: {
+          ...reacquiredBaseFrame.landmarks,
+          indexTip: { x: 0.8, y: 0.3, z: 0 }
+        }
+      },
+      "open"
+    );
+    const scriptedFrames: (HandFrame | undefined)[] = [
+      firstFrame,
+      undefined,
+      reacquiredFrame
+    ];
+    let capturedOptions: MediaPipeHandTrackerOptions | undefined;
+    const detectMock = vi.fn(() => {
+      const frame = scriptedFrames.shift();
+
+      if (frame) {
+        capturedOptions?.onLandmarkTrace({
+          frameAtMs: 0,
+          rawIndexTip: frame.landmarks.indexTip,
+          filteredIndexTip: frame.landmarks.indexTip
+        });
+      }
+
+      return Promise.resolve(frame);
+    });
+    const scriptedTracker: ScriptedHandTracker = {
+      detect: detectMock
+    };
+    const createHandTracker = vi.fn((options: MediaPipeHandTrackerOptions) => {
+      capturedOptions = options;
+      return Promise.resolve(scriptedTracker);
+    });
+
+    mockAudioAndCameraControllers(() =>
+      Promise.resolve({
+        getTracks: () => [],
+        getVideoTracks: () => [{ kind: "video" } as MediaStreamTrack]
+      } as unknown as MediaStream)
+    );
+
+    const { startApp } = await import("../../../../src/app/bootstrap/startApp");
+    const { root, overlayRoot } = createFakeRoot();
+
+    (
+      startApp as unknown as (
+        root: HTMLDivElement,
+        debugValues: unknown,
+        debugHooks: { createHandTracker: typeof createHandTracker }
+      ) => void
+    )(root as unknown as HTMLDivElement, undefined, { createHandTracker });
+
+    overlayRoot.click("camera");
+    await flushPromises();
+    overlayRoot.click("start");
+    await tickCountdown(3);
+
+    while (detectMock.mock.calls.length < 3) {
+      await runNextAnimationFrame();
+    }
+
+    const lastTelemetry = telemetryCalls.at(-1);
+
+    expect(lastTelemetry?.rawIndexJitter).toBeCloseTo(0);
+  });
+
   it("keeps the app in ready state when tracker prewarm fails (non-fatal)", async () => {
     const trackerStartupError = new Error("tracker prewarm failed");
     const cameraStop = vi.fn();
