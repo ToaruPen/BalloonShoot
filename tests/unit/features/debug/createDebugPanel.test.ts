@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   createDebugPanel,
   type DebugInputElement,
+  type DebugOutputElement,
+  type DebugTelemetry,
   type DebugValues
 } from "../../../../src/features/debug/createDebugPanel";
 
@@ -14,6 +16,8 @@ const sampleInitial: DebugValues = {
 interface FakeInput extends DebugInputElement {
   fireInput: () => void;
 }
+
+type FakeOutput = DebugOutputElement;
 
 const createFakeInput = (key: string, initialValue: string): FakeInput => {
   let listener: (() => void) | undefined;
@@ -35,6 +39,22 @@ const createFakeInput = (key: string, initialValue: string): FakeInput => {
     }
   };
   return input;
+};
+
+const createFakeOutput = (key: string): FakeOutput => ({
+  dataset: { debugOutput: key },
+  textContent: ""
+});
+
+const sampleTelemetry: DebugTelemetry = {
+  phase: "armed",
+  rejectReason: "waiting_for_stable_pulled",
+  triggerConfidence: 0.67,
+  gunPoseConfidence: 0.91,
+  openFrames: 0,
+  pulledFrames: 1,
+  trackingPresentFrames: 4,
+  nonGunPoseFrames: 0
 };
 
 describe("createDebugPanel", () => {
@@ -61,6 +81,29 @@ describe("createDebugPanel", () => {
     expect(html).toContain('max="0.4"');
     expect(html).toContain('min="0.02"');
     expect(html).toContain('max="0.25"');
+    expect(html).toContain('data-debug-output="phase"');
+    expect(html).toContain('data-debug-output="rejectReason"');
+    expect(html).toContain('data-debug-output="trigger"');
+    expect(html).toContain('data-debug-output="gunPose"');
+    expect(html).toContain('data-debug-output="counters"');
+  });
+
+  it("renders compact runtime telemetry into bound debug outputs", () => {
+    const panel = createDebugPanel(sampleInitial);
+    const phase = createFakeOutput("phase");
+    const rejectReason = createFakeOutput("rejectReason");
+    const trigger = createFakeOutput("trigger");
+    const gunPose = createFakeOutput("gunPose");
+    const counters = createFakeOutput("counters");
+
+    panel.bind([], [phase, rejectReason, trigger, gunPose, counters]);
+    panel.setTelemetry(sampleTelemetry);
+
+    expect(phase.textContent).toBe("armed");
+    expect(rejectReason.textContent).toBe("waiting_for_stable_pulled");
+    expect(trigger.textContent).toBe("0.67");
+    expect(gunPose.textContent).toBe("0.91");
+    expect(counters.textContent).toBe("open=0 pull=1 track=4 pose=0");
   });
 
   it("updates values in place when bound inputs fire", () => {

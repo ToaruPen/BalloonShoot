@@ -1,6 +1,10 @@
 import { createAudioController, type AudioController } from "../../features/audio/createAudioController";
 import { createCameraController, type CameraController } from "../../features/camera/createCameraController";
-import { createDebugPanel, type DebugValues } from "../../features/debug/createDebugPanel";
+import {
+  createDebugPanel,
+  type DebugTelemetry,
+  type DebugValues
+} from "../../features/debug/createDebugPanel";
 import { createGameEngine, registerShot } from "../../features/gameplay/domain/createGameEngine";
 import { createMediaPipeHandTracker } from "../../features/hand-tracking/createMediaPipeHandTracker";
 import {
@@ -15,9 +19,15 @@ import { createInitialAppState, reduceAppEvent } from "../state/reduceAppEvent";
 
 const CROSSHAIR_Y_RATIO = 0.62;
 
+export interface StartAppDebugHooks {
+  createHandTracker?: () => Promise<HandTrackerLike>;
+}
+
 interface ImageCaptureLike {
   grabFrame(): Promise<ImageBitmap>;
 }
+
+type HandTrackerLike = Pick<Awaited<ReturnType<typeof createMediaPipeHandTracker>>, "detect">;
 
 type ImageCaptureConstructorLike = new (track: MediaStreamTrack) => ImageCaptureLike;
 
@@ -33,18 +43,25 @@ const publishCameraFeedStream = (stream: MediaStream | undefined): void => {
 
 export const getCameraFeedStream = (): MediaStream | undefined => cameraFeedStream;
 
-export const setCameraFeedStreamListener = (
-  listener: CameraFeedListener | undefined
-): void => {
-  cameraFeedListener = listener;
-  listener?.(cameraFeedStream);
-};
-
-export const createDefaultDebugValues = (): DebugValues => ({
+const createDefaultDebugValues = (): DebugValues => ({
   smoothingAlpha: gameConfig.input.smoothingAlpha,
   triggerPullThreshold: gameConfig.input.triggerPullThreshold,
   triggerReleaseThreshold: gameConfig.input.triggerReleaseThreshold
 });
+
+const toDebugTelemetry = (runtime: InputRuntimeState | undefined): DebugTelemetry | undefined =>
+  runtime
+    ? {
+        phase: runtime.phase,
+        rejectReason: runtime.rejectReason,
+        triggerConfidence: runtime.triggerConfidence,
+        gunPoseConfidence: runtime.gunPoseConfidence,
+        openFrames: runtime.openFrames,
+        pulledFrames: runtime.pulledFrames,
+        trackingPresentFrames: runtime.trackingPresentFrames,
+        nonGunPoseFrames: runtime.nonGunPoseFrames
+      }
+    : undefined;
 
 const createImageCapture = (stream: MediaStream): ImageCaptureLike => {
   const ImageCaptureApi = (
@@ -84,14 +101,16 @@ export const resolveOverlayAction = (
 
 export const startApp = (
   root: HTMLDivElement,
-  debugValues: DebugValues = createDefaultDebugValues()
+  debugValues: DebugValues = createDefaultDebugValues(),
+  debugHooks?: StartAppDebugHooks
 ): void => {
   let state = createInitialAppState();
   let engine = createGameEngine();
   let audio: AudioController | undefined;
   let camera: CameraController | undefined;
   let countdownTimerId: number | undefined;
-  let trackerPromise: ReturnType<typeof createMediaPipeHandTracker> | undefined;
+  const createHandTracker = debugHooks?.createHandTracker ?? createMediaPipeHandTracker;
+  let trackerPromise: ReturnType<typeof createHandTracker> | undefined;
   let gameFrameRequestId: number | undefined;
   let trackingFrameRequestId: number | undefined;
   let trackingCapture: ImageCaptureLike | undefined;
@@ -128,8 +147,10 @@ export const startApp = (
 
   const debugPanel = createDebugPanel(debugValues);
   debugRoot.innerHTML = debugPanel.render();
-  debugPanel.bind(debugRoot.querySelectorAll<HTMLInputElement>("[data-debug]"));
-
+  debugPanel.bind(
+    debugRoot.querySelectorAll<HTMLInputElement>("[data-debug]"),
+    debugRoot.querySelectorAll<HTMLElement>("[data-debug-output]")
+  );
 
   const ctx = canvas.getContext("2d");
 
@@ -185,17 +206,21 @@ export const startApp = (
     trackerPromise = undefined;
     inputRuntime = undefined;
     trackedCrosshair = undefined;
+    debugPanel.setTelemetry(undefined);
     engine = createGameEngine();
     state = createInitialAppState();
     console.error("Camera startup failed", error);
     render();
   };
 
-  const getTrackerPromise = (): ReturnType<typeof createMediaPipeHandTracker> =>
-    (trackerPromise ??= createMediaPipeHandTracker().catch((error: unknown) => {
-      trackerPromise = undefined;
-      throw error;
-    }));
+  const getTrackerPromise = (): ReturnType<typeof createHandTracker> => {
+    trackerPromise ??= createHandTracker().catch((error: unknown) => {
+        trackerPromise = undefined;
+        throw error;
+      });
+
+    return trackerPromise;
+  };
 
   const syncScore = (): void => {
     state = reduceAppEvent(state, {
@@ -208,18 +233,20 @@ export const startApp = (
 
   const render = (): void => {
     overlayRoot.innerHTML = renderShell(state);
+    const crosshair =
+      state.screen === "playing"
+        ? inputRuntime?.phase === "tracking_lost"
+          ? undefined
+          : trackedCrosshair ??
+            inputRuntime?.crosshair ?? {
+              x: canvas.width / 2,
+              y: canvas.height * CROSSHAIR_Y_RATIO
+            }
+        : undefined;
+
     drawGameFrame(ctx, {
       balloons: engine.balloons,
-      ...(state.screen === "playing"
-        ? {
-            crosshair:
-              trackedCrosshair ??
-              inputRuntime?.crosshair ?? {
-                x: canvas.width / 2,
-                y: canvas.height * CROSSHAIR_Y_RATIO
-              }
-          }
-        : {})
+      ...(crosshair === undefined ? {} : { crosshair })
     });
   };
 
@@ -261,10 +288,6 @@ export const startApp = (
       try {
         const handFrame = await tracker.detect(bitmap, frameAtMs);
 
-        if (!handFrame) {
-          return;
-        }
-
         const input = mapHandToGameInput(
           handFrame,
           { width: canvas.width, height: canvas.height },
@@ -272,19 +295,30 @@ export const startApp = (
           debugPanel.values
         );
 
+        const previousTrackedCrosshair = trackedCrosshair;
+
         inputRuntime = input.runtime;
         trackedCrosshair = input.crosshair;
+        debugPanel.setTelemetry(toDebugTelemetry(input.runtime));
+
+        if (input.runtime.phase === "tracking_lost") {
+          render();
+        }
 
         if (input.shotFired) {
           void audio?.playShot().catch(logAudioPlaybackFailure("Shot"));
 
           const scoreBefore = engine.score;
-          registerShot(engine, {
-            x: input.crosshair.x,
-            y: input.crosshair.y,
-            // `hit: true` opts this shot into collision detection inside the engine.
-            hit: true
-          });
+          const shotCrosshair = input.crosshair ?? previousTrackedCrosshair;
+
+          if (shotCrosshair) {
+            registerShot(engine, {
+              x: shotCrosshair.x,
+              y: shotCrosshair.y,
+              // `hit: true` opts this shot into collision detection inside the engine.
+              hit: true
+            });
+          }
 
           if (engine.score > scoreBefore) {
             void audio?.playHit().catch(logAudioPlaybackFailure("Hit"));
@@ -379,15 +413,16 @@ export const startApp = (
         return;
       }
 
-      state = nextState;
-      stopGameLoop();
-      inputRuntime = undefined;
-      trackedCrosshair = undefined;
-      engine = createGameEngine();
-      void audio?.startBgm().catch(logAudioPlaybackFailure("BGM"));
-      startTrackerLoop();
-      startCountdown();
-      return;
+    state = nextState;
+    stopGameLoop();
+    inputRuntime = undefined;
+    trackedCrosshair = undefined;
+    debugPanel.setTelemetry(undefined);
+    engine = createGameEngine();
+    void audio?.startBgm().catch(logAudioPlaybackFailure("BGM"));
+    startTrackerLoop();
+    startCountdown();
+    return;
     }
 
     if (event.type === "RETRY_CLICKED") {
@@ -405,6 +440,7 @@ export const startApp = (
       publishCameraFeedStream(undefined);
       inputRuntime = undefined;
       trackedCrosshair = undefined;
+      debugPanel.setTelemetry(undefined);
       engine = createGameEngine();
       state = nextState;
       render();
