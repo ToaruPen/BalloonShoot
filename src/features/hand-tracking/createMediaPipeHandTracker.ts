@@ -19,7 +19,7 @@ interface HandLandmarkerResultLike {
   handedness?: HandednessLike[][];
 }
 
-export interface MediaPipeHandTracker {
+interface MediaPipeHandTracker {
   detect(bitmap: ImageBitmap, frameAtMs: number): Promise<HandFrame | undefined>;
 }
 

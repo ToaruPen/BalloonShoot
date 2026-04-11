@@ -5,12 +5,12 @@ export interface ViewportSize {
   height: number;
 }
 
-export interface NormalizedPoint {
+interface NormalizedPoint {
   x: number;
   y: number;
 }
 
-export interface ProjectLandmarkOptions {
+interface ProjectLandmarkOptions {
   mirrorX?: boolean;
 }
 
