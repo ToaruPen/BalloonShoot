@@ -192,6 +192,26 @@ const createTrackingLossHandFrames = () => [
   withThumbTriggerPose(createThumbTriggerFrame("open"), "open")
 ];
 
+const mockAudioAndCameraControllers = (
+  requestStream: () => Promise<unknown>,
+  stop = vi.fn()
+): typeof stop => {
+  createAudioControllerMock.mockReturnValue({
+    startBgm: vi.fn(() => Promise.resolve()),
+    stopBgm: vi.fn(),
+    playShot: vi.fn(() => Promise.resolve()),
+    playHit: vi.fn(() => Promise.resolve()),
+    playTimeout: vi.fn(() => Promise.resolve()),
+    playResult: vi.fn(() => Promise.resolve())
+  });
+  createCameraControllerMock.mockReturnValue({
+    requestStream: vi.fn(requestStream),
+    stop
+  });
+
+  return stop;
+};
+
 describe("startApp", () => {
   let intervalCallback: (() => void) | undefined;
   let animationFrameCallbacks: (FrameRequestCallback | undefined)[];
@@ -271,18 +291,9 @@ describe("startApp", () => {
   };
 
   it("seeds the debug panel from shared input config", async () => {
-    createAudioControllerMock.mockReturnValue({
-      startBgm: vi.fn(() => Promise.resolve()),
-      stopBgm: vi.fn(),
-      playShot: vi.fn(() => Promise.resolve()),
-      playHit: vi.fn(() => Promise.resolve()),
-      playTimeout: vi.fn(() => Promise.resolve()),
-      playResult: vi.fn(() => Promise.resolve())
-    });
-    createCameraControllerMock.mockReturnValue({
-      requestStream: vi.fn(() => Promise.resolve({ getTracks: () => [], getVideoTracks: () => [] })),
-      stop: vi.fn()
-    });
+    mockAudioAndCameraControllers(() =>
+      Promise.resolve({ getTracks: () => [], getVideoTracks: () => [] })
+    );
     createMediaPipeHandTrackerMock.mockResolvedValue({ detect: vi.fn() });
 
     const { startApp } = await import("../../../../src/app/bootstrap/startApp");
@@ -297,18 +308,7 @@ describe("startApp", () => {
 
   it("clears the prewarmed tracker promise when camera startup fails so the user can retry", async () => {
     const cameraStop = vi.fn();
-    createAudioControllerMock.mockReturnValue({
-      startBgm: vi.fn(() => Promise.resolve()),
-      stopBgm: vi.fn(),
-      playShot: vi.fn(() => Promise.resolve()),
-      playHit: vi.fn(() => Promise.resolve()),
-      playTimeout: vi.fn(() => Promise.resolve()),
-      playResult: vi.fn(() => Promise.resolve())
-    });
-    createCameraControllerMock.mockReturnValue({
-      requestStream: vi.fn(() => Promise.reject(new Error("camera denied"))),
-      stop: cameraStop
-    });
+    mockAudioAndCameraControllers(() => Promise.reject(new Error("camera denied")), cameraStop);
     createMediaPipeHandTrackerMock.mockResolvedValue({
       detect: vi.fn()
     });
@@ -343,23 +343,14 @@ describe("startApp", () => {
       detect: vi.fn(() => Promise.resolve(scriptedFrames.shift()))
     };
 
-    createAudioControllerMock.mockReturnValue({
-      startBgm: vi.fn(() => Promise.resolve()),
-      stopBgm: vi.fn(),
-      playShot: vi.fn(() => Promise.resolve()),
-      playHit: vi.fn(() => Promise.resolve()),
-      playTimeout: vi.fn(() => Promise.resolve()),
-      playResult: vi.fn(() => Promise.resolve())
-    });
-    createCameraControllerMock.mockReturnValue({
-      requestStream: vi.fn(() =>
-        Promise.resolve({
+    mockAudioAndCameraControllers(() =>
+      Promise.resolve(
+        {
           getTracks: () => [],
           getVideoTracks: () => [{ kind: "video" } as MediaStreamTrack]
-        } as unknown as MediaStream)
-      ),
-      stop: vi.fn()
-    });
+        } as unknown as MediaStream
+      )
+    );
 
     createHandTracker.mockResolvedValue(scriptedTracker);
 
@@ -404,23 +395,14 @@ describe("startApp", () => {
       detect: vi.fn(() => Promise.resolve(scriptedFrames.shift()))
     };
 
-    createAudioControllerMock.mockReturnValue({
-      startBgm: vi.fn(() => Promise.resolve()),
-      stopBgm: vi.fn(),
-      playShot: vi.fn(() => Promise.resolve()),
-      playHit: vi.fn(() => Promise.resolve()),
-      playTimeout: vi.fn(() => Promise.resolve()),
-      playResult: vi.fn(() => Promise.resolve())
-    });
-    createCameraControllerMock.mockReturnValue({
-      requestStream: vi.fn(() =>
-        Promise.resolve({
+    mockAudioAndCameraControllers(() =>
+      Promise.resolve(
+        {
           getTracks: () => [],
           getVideoTracks: () => [{ kind: "video" } as MediaStreamTrack]
-        } as unknown as MediaStream)
-      ),
-      stop: vi.fn()
-    });
+        } as unknown as MediaStream
+      )
+    );
 
     createHandTracker.mockResolvedValue(scriptedTracker);
 
@@ -551,18 +533,7 @@ describe("startApp", () => {
       getVideoTracks: () => []
     } as unknown as MediaStream;
 
-    createAudioControllerMock.mockReturnValue({
-      startBgm: vi.fn(() => Promise.resolve()),
-      stopBgm: vi.fn(),
-      playShot: vi.fn(() => Promise.resolve()),
-      playHit: vi.fn(() => Promise.resolve()),
-      playTimeout: vi.fn(() => Promise.resolve()),
-      playResult: vi.fn(() => Promise.resolve())
-    });
-    createCameraControllerMock.mockReturnValue({
-      requestStream: vi.fn(() => Promise.resolve(stream)),
-      stop: cameraStop
-    });
+    mockAudioAndCameraControllers(() => Promise.resolve(stream), cameraStop);
     createMediaPipeHandTrackerMock.mockImplementationOnce(() =>
       Promise.reject(trackerStartupError)
     );
