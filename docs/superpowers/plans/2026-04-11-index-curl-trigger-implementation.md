@@ -620,12 +620,13 @@ const computeConfidence = (
       return clamp01((curledThreshold - ratio) / Math.max(curledThreshold, Number.EPSILON));
     case "partial":
     default: {
+      // Confidence in being "partial" is highest at the midpoint of the band
+      // (ratio is equally far from both edges) and lowest near either edge.
       const distanceFromExtended = Math.abs(ratio - extendedThreshold);
       const distanceFromCurled = Math.abs(ratio - curledThreshold);
-      // Confidence in being "partial" is highest at the midpoint of the band.
       const bandWidth = Math.max(extendedThreshold - curledThreshold, Number.EPSILON);
       const closer = Math.min(distanceFromExtended, distanceFromCurled);
-      return clamp01(1 - closer / (bandWidth / 2));
+      return clamp01(closer / (bandWidth / 2));
     }
   }
 };

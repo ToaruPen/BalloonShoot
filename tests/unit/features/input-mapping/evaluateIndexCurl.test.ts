@@ -83,9 +83,24 @@ describe("measureIndexCurl", () => {
   });
 
   it("does not feed zDelta into curl confidence when zAssistWeight is 0", () => {
-    const withoutZ = measure(0.9, undefined, { zDelta: 0 });
-    const withZ = measure(0.9, undefined, { zDelta: -0.5 });
+    // Use ratio 0.45 (curled) so confidence is non-zero — at the partial midpoint
+    // both confidences would be equal at any value, making the assertion vacuous.
+    const withoutZ = measure(0.45, undefined, { zDelta: 0 });
+    const withZ = measure(0.45, undefined, { zDelta: -0.5 });
+    expect(withoutZ.confidence).toBeGreaterThan(0);
     expect(withZ.confidence).toBeCloseTo(withoutZ.confidence, 5);
+  });
+
+  it("computes confidence shapes correctly per state", () => {
+    // partial: highest at the midpoint of the band (0.65 + 0.5/2 = 0.90)
+    expect(measure(0.9, undefined).confidence).toBeCloseTo(1, 5);
+    // partial: ~0 near either edge (0.66 is right next to curled edge)
+    expect(measure(0.66, undefined).confidence).toBeCloseTo(0.04, 2);
+    // extended: 0 right at the threshold, grows past it
+    expect(measure(1.15, undefined).confidence).toBeCloseTo(0, 5);
+    expect(measure(1.4, undefined).confidence).toBeGreaterThan(0);
+    // curled: 0 right at the threshold, grows below it
+    expect(measure(0.45, undefined).confidence).toBeGreaterThan(0);
   });
 
   it("safely returns the previous state when handScale is zero", () => {
