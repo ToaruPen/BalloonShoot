@@ -1,14 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { HandFrame } from "../../src/shared/types/hand";
-import {
-  createThumbTriggerFrame,
-  withThumbTriggerPose
-} from "../unit/features/input-mapping/thumbTriggerTestHelper";
+import { createIndexCurlFrame } from "../unit/features/input-mapping/indexCurlTestHelper";
 
 interface TelemetrySnapshot {
   phase: string | null;
   rejectReason: string | null;
-  trigger: string | null;
   gunPose: string | null;
   counters: string | null;
 }
@@ -29,7 +25,18 @@ declare global {
   }
 }
 
-const createBaseFrame = (): HandFrame => createThumbTriggerFrame("open");
+const createBaseFrame = (): HandFrame => createIndexCurlFrame({ ratio: 1.4 }); // extended state
+
+// Helper to update a frame's curl state by adjusting the index finger ratio
+const withIndexCurlState = (frame: HandFrame, state: "extended" | "curled"): HandFrame => {
+  // Compute handScale from the frame to preserve the hand size
+  const wrist = frame.landmarks.wrist;
+  const indexMcp = frame.landmarks.indexMcp;
+  const handScale = Math.hypot(indexMcp.x - wrist.x, indexMcp.y - wrist.y) || 0.2;
+
+  const ratio = state === "extended" ? 1.4 : 0.45;
+  return createIndexCurlFrame({ ratio, handScale });
+};
 
 const createFrameSequence = (
   frames: (HandFrame | undefined)[]
@@ -101,7 +108,6 @@ const bootHarness = async (page: Page, frames: (HandFrame | undefined)[]): Promi
       const readTelemetrySnapshot = () => ({
         phase: document.querySelector('[data-debug-output="phase"]')?.textContent ?? null,
         rejectReason: document.querySelector('[data-debug-output="rejectReason"]')?.textContent ?? null,
-        trigger: document.querySelector('[data-debug-output="trigger"]')?.textContent ?? null,
         gunPose: document.querySelector('[data-debug-output="gunPose"]')?.textContent ?? null,
         counters: document.querySelector('[data-debug-output="counters"]')?.textContent ?? null
       });
@@ -168,10 +174,9 @@ const bootHarness = async (page: Page, frames: (HandFrame | undefined)[]): Promi
   await page.goto("/");
   await expect(page.locator('[data-debug-output="phase"]')).toHaveText("--");
   await expect(page.locator('[data-debug-output="rejectReason"]')).toHaveText("--");
-  await expect(page.locator('[data-debug-output="trigger"]')).toHaveText("--");
   await expect(page.locator('[data-debug-output="gunPose"]')).toHaveText("--");
   await expect(page.locator('[data-debug-output="counters"]')).toHaveText(
-    "open=0 pull=0 track=0 pose=0"
+    "extended=0 curled=0 track=0 pose=0"
   );
 
   await page.evaluate(() => {
@@ -218,11 +223,11 @@ test.describe("issue-30 acceptance", () => {
   test("intentional pull emits exactly one shot", async ({ page }) => {
     const base = createBaseFrame();
     const frames = [
-      withThumbTriggerPose(base, "open"),
-      withThumbTriggerPose(base, "open"),
-      withThumbTriggerPose(base, "open"),
-      withThumbTriggerPose(base, "pulled"),
-      withThumbTriggerPose(base, "pulled")
+      withIndexCurlState(base, "extended"),
+      withIndexCurlState(base, "extended"),
+      withIndexCurlState(base, "extended"),
+      withIndexCurlState(base, "curled"),
+      withIndexCurlState(base, "curled")
     ];
     const expectedPhases = ["idle", "ready", "armed", "armed", "fired", "tracking_lost"];
 
@@ -242,13 +247,13 @@ test.describe("issue-30 acceptance", () => {
   test("held pull does not auto-repeat", async ({ page }) => {
     const base = createBaseFrame();
     const frames = [
-      withThumbTriggerPose(base, "open"),
-      withThumbTriggerPose(base, "open"),
-      withThumbTriggerPose(base, "open"),
-      withThumbTriggerPose(base, "pulled"),
-      withThumbTriggerPose(base, "pulled"),
-      withThumbTriggerPose(base, "pulled"),
-      withThumbTriggerPose(base, "pulled")
+      withIndexCurlState(base, "extended"),
+      withIndexCurlState(base, "extended"),
+      withIndexCurlState(base, "extended"),
+      withIndexCurlState(base, "curled"),
+      withIndexCurlState(base, "curled"),
+      withIndexCurlState(base, "curled"),
+      withIndexCurlState(base, "curled")
     ];
     const expectedPhases = [
       "idle",
@@ -272,12 +277,12 @@ test.describe("issue-30 acceptance", () => {
   test("brief thumb jitter does not fire", async ({ page }) => {
     const base = createBaseFrame();
     const frames = [
-      withThumbTriggerPose(base, "open"),
-      withThumbTriggerPose(base, "open"),
-      withThumbTriggerPose(base, "open"),
-      withThumbTriggerPose(base, "pulled"),
-      withThumbTriggerPose(base, "open"),
-      withThumbTriggerPose(base, "open")
+      withIndexCurlState(base, "extended"),
+      withIndexCurlState(base, "extended"),
+      withIndexCurlState(base, "extended"),
+      withIndexCurlState(base, "curled"),
+      withIndexCurlState(base, "extended"),
+      withIndexCurlState(base, "extended")
     ];
     const expectedPhases = ["idle", "ready", "armed", "armed", "armed", "armed"];
 
@@ -293,18 +298,18 @@ test.describe("issue-30 acceptance", () => {
       "armed"
     ]);
     expect(meaningfulSnapshots.filter((snapshot) => snapshot.phase === "fired")).toHaveLength(0);
-    expect(meaningfulSnapshots.at(-1)?.rejectReason).toBe("waiting_for_stable_pulled");
+    expect(meaningfulSnapshots.at(-1)?.rejectReason).toBe("waiting_for_stable_curled");
   });
 
   test("tracking loss plus reacquisition does not ghost-fire", async ({ page }) => {
     const base = createBaseFrame();
     const frames = [
-      withThumbTriggerPose(base, "open"),
-      withThumbTriggerPose(base, "open"),
+      withIndexCurlState(base, "extended"),
+      withIndexCurlState(base, "extended"),
       undefined,
       undefined,
-      withThumbTriggerPose(base, "open"),
-      withThumbTriggerPose(base, "open")
+      withIndexCurlState(base, "extended"),
+      withIndexCurlState(base, "extended")
     ];
     const expectedPhases = ["idle", "ready", "tracking_lost", "tracking_lost", "idle"];
 
@@ -314,6 +319,6 @@ test.describe("issue-30 acceptance", () => {
     expect(meaningfulSnapshots.map((snapshot) => snapshot.phase)).toEqual(expectedPhases);
     expect(meaningfulSnapshots.filter((snapshot) => snapshot.phase === "fired")).toHaveLength(0);
     expect(meaningfulSnapshots.at(2)?.rejectReason).toBe("tracking_lost");
-    expect(meaningfulSnapshots.at(-1)?.rejectReason).toBe("waiting_for_stable_open");
+    expect(meaningfulSnapshots.at(-1)?.rejectReason).toBe("waiting_for_stable_extended");
   });
 });
