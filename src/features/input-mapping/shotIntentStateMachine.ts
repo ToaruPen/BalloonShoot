@@ -314,7 +314,16 @@ const advanceArmedPhase = (
   const shotFired = trackingAndPoseReady && stableCurled;
   const phase: ShotIntentPhase = shotFired ? "fired" : "armed";
   const enteringPartial = stateBefore.curlState === "extended" && curl.rawCurlState === "partial";
-  const crosshairLockAction: CrosshairLockAction = enteringPartial ? "freeze" : "none";
+  // If the armed user entered partial (freeze) but then straightens back to
+  // extended without firing, they aborted the shot. Release the lock so aiming
+  // is no longer stuck at the frozen crosshair.
+  const abortedBackToExtended =
+    stateBefore.curlState === "partial" && curl.curlState === "extended";
+  const crosshairLockAction: CrosshairLockAction = enteringPartial
+    ? "freeze"
+    : abortedBackToExtended
+      ? "release"
+      : "none";
 
   return {
     state: buildTrackedState(stateBefore, phase, curl, gunPose, trackingPresentFrames),

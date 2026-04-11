@@ -102,6 +102,22 @@ describe("mapHandToGameInput (curl orchestration)", () => {
     expect(results[7]?.runtime.lockedCrosshair).toBeUndefined();
   });
 
+  it("releases the lock when an armed curl is aborted back to extended", () => {
+    const results = advance([
+      { ratio: 1.4 },
+      { ratio: 1.4 },
+      { ratio: 1.4 }, // armed
+      { ratio: 0.9 }, // partial -> freeze
+      { ratio: 1.4 }, // 1 extended frame
+      { ratio: 1.4 } // 2 extended frames -> release
+    ]);
+
+    expect(results[3]?.crosshairLockAction).toBe("freeze");
+    expect(results[3]?.runtime.lockedCrosshair).toBeDefined();
+    expect(results[5]?.crosshairLockAction).toBe("release");
+    expect(results[5]?.runtime.lockedCrosshair).toBeUndefined();
+  });
+
   it("falls back to projectedCrosshairCandidate when neither locked nor lastExtended is set", () => {
     const result = mapHandToGameInput(
       createIndexCurlFrame({ ratio: 0.9 }),

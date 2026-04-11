@@ -163,6 +163,22 @@ describe("ShotIntentStateMachine (curl)", () => {
     expect(curledFirst.every((r) => r.crosshairLockAction !== "freeze")).toBe(true);
   });
 
+  it("emits release when an armed curl is aborted back to extended", () => {
+    const results = runSequence([
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" }, // armed
+      { rawCurlState: "partial" }, // freeze
+      { rawCurlState: "extended" }, // 1 extended frame, curlState still partial
+      { rawCurlState: "extended" } // 2 extended frames, curlState -> extended, release
+    ]);
+    expect(results[3]?.crosshairLockAction).toBe("freeze");
+    expect(results[4]?.crosshairLockAction).toBe("none");
+    expect(results[5]?.crosshairLockAction).toBe("release");
+    expect(results[5]?.state.phase).toBe("armed");
+    expect(results[5]?.state.curlState).toBe("extended");
+  });
+
   it("emits release when tracking is lost", () => {
     const results = runSequence([
       { rawCurlState: "extended" },
