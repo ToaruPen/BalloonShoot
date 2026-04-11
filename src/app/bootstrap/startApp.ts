@@ -13,6 +13,7 @@ import {
 } from "../../features/hand-tracking/createMediaPipeHandTracker";
 import type { OneEuroFilterConfig } from "../../features/hand-tracking/oneEuroFilter";
 import { createLandmarkJitterTracker } from "../../features/hand-tracking/landmarkJitter";
+import { measureThumbPull } from "../../features/input-mapping/evaluateThumbTrigger";
 import {
   mapHandToGameInput,
   type InputRuntimeState
@@ -59,10 +60,16 @@ const createDefaultDebugValues = (): DebugValues => ({
   handFilterBeta: gameConfig.input.handFilterBeta
 });
 
+interface TelemetryMetrics {
+  rawIndexJitter: number;
+  filterIndexJitter: number;
+  rawTriggerProjection: number;
+  filterTriggerProjection: number;
+}
+
 const toDebugTelemetry = (
   runtime: InputRuntimeState | undefined,
-  rawIndexJitter: number,
-  filterIndexJitter: number
+  metrics: TelemetryMetrics
 ): DebugTelemetry | undefined =>
   runtime
     ? {
@@ -74,8 +81,7 @@ const toDebugTelemetry = (
         pulledFrames: runtime.pulledFrames,
         trackingPresentFrames: runtime.trackingPresentFrames,
         nonGunPoseFrames: runtime.nonGunPoseFrames,
-        rawIndexJitter,
-        filterIndexJitter
+        ...metrics
       }
     : undefined;
 
@@ -171,6 +177,13 @@ export const startApp = (
 
   const rawJitterTracker = createLandmarkJitterTracker(30);
   const filterJitterTracker = createLandmarkJitterTracker(30);
+  let latestRawTriggerProjection = 0;
+  let latestFilterTriggerProjection = 0;
+
+  const resetTriggerProjections = (): void => {
+    latestRawTriggerProjection = 0;
+    latestFilterTriggerProjection = 0;
+  };
 
   const getFilterConfig = (): OneEuroFilterConfig => ({
     minCutoff: debugPanel.values.handFilterMinCutoff,
@@ -179,11 +192,12 @@ export const startApp = (
   });
 
   const handleLandmarkTrace = (trace: LandmarkTrace): void => {
-    rawJitterTracker.push(trace.rawIndexTip.x, trace.rawIndexTip.y);
-    filterJitterTracker.push(
-      trace.filteredIndexTip.x,
-      trace.filteredIndexTip.y
-    );
+    const rawIndexTip = trace.rawFrame.landmarks.indexTip;
+    const filteredIndexTip = trace.filteredFrame.landmarks.indexTip;
+    rawJitterTracker.push(rawIndexTip.x, rawIndexTip.y);
+    filterJitterTracker.push(filteredIndexTip.x, filteredIndexTip.y);
+    latestRawTriggerProjection = measureThumbPull(trace.rawFrame);
+    latestFilterTriggerProjection = measureThumbPull(trace.filteredFrame);
   };
 
   const ctx = canvas.getContext("2d");
@@ -242,6 +256,7 @@ export const startApp = (
     trackedCrosshair = undefined;
     rawJitterTracker.reset();
     filterJitterTracker.reset();
+    resetTriggerProjections();
     debugPanel.setTelemetry(undefined);
     engine = createGameEngine();
     state = createInitialAppState();
@@ -339,16 +354,18 @@ export const startApp = (
         inputRuntime = input.runtime;
         trackedCrosshair = input.crosshair;
         debugPanel.setTelemetry(
-          toDebugTelemetry(
-            input.runtime,
-            rawJitterTracker.peek(),
-            filterJitterTracker.peek()
-          )
+          toDebugTelemetry(input.runtime, {
+            rawIndexJitter: rawJitterTracker.peek(),
+            filterIndexJitter: filterJitterTracker.peek(),
+            rawTriggerProjection: latestRawTriggerProjection,
+            filterTriggerProjection: latestFilterTriggerProjection
+          })
         );
 
         if (input.runtime.phase === "tracking_lost") {
           rawJitterTracker.reset();
           filterJitterTracker.reset();
+          resetTriggerProjections();
           render();
         }
 
@@ -466,6 +483,7 @@ export const startApp = (
       trackedCrosshair = undefined;
       rawJitterTracker.reset();
       filterJitterTracker.reset();
+      resetTriggerProjections();
       debugPanel.setTelemetry(undefined);
       engine = createGameEngine();
       void audio?.startBgm().catch(logAudioPlaybackFailure("BGM"));
@@ -491,6 +509,7 @@ export const startApp = (
       trackedCrosshair = undefined;
       rawJitterTracker.reset();
       filterJitterTracker.reset();
+      resetTriggerProjections();
       debugPanel.setTelemetry(undefined);
       engine = createGameEngine();
       state = nextState;

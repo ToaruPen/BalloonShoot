@@ -20,7 +20,7 @@ export interface TriggerTuning {
 
 const HYSTERESIS_GAP = 0.01;
 
-const measureThumbPull = (frame: HandFrame): number => {
+export const measureThumbPull = (frame: HandFrame): number => {
   const { wrist, indexMcp, thumbIp, thumbTip } = frame.landmarks;
   const handScale = Math.hypot(indexMcp.x - wrist.x, indexMcp.y - wrist.y) || 1;
   const axisX = indexMcp.x - thumbIp.x;

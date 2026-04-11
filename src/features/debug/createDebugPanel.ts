@@ -29,6 +29,8 @@ export interface DebugTelemetry {
   nonGunPoseFrames: number;
   rawIndexJitter: number;
   filterIndexJitter: number;
+  rawTriggerProjection: number;
+  filterTriggerProjection: number;
 }
 
 interface DebugPanel {
@@ -55,7 +57,9 @@ type DebugOutputKey =
   | "gunPose"
   | "counters"
   | "rawIndexJitter"
-  | "filterIndexJitter";
+  | "filterIndexJitter"
+  | "rawTriggerProjection"
+  | "filterTriggerProjection";
 
 const HYSTERESIS_GAP = 0.01;
 
@@ -84,7 +88,9 @@ const DEBUG_OUTPUT_META: Record<DebugOutputKey, string> = {
   gunPose: "Pose",
   counters: "Counts",
   rawIndexJitter: "RawJtr",
-  filterIndexJitter: "FiltJtr"
+  filterIndexJitter: "FiltJtr",
+  rawTriggerProjection: "RawTrig",
+  filterTriggerProjection: "FiltTrig"
 };
 
 const DEBUG_OUTPUT_KEYS = Object.keys(DEBUG_OUTPUT_META) as DebugOutputKey[];
@@ -109,8 +115,8 @@ const countDecimals = (value: number): number => {
 const formatForInput = (key: keyof DebugValues, value: number): string =>
   String(Number(value.toFixed(countDecimals(DEBUG_META[key].step))));
 
-const formatConfidence = (value: number | undefined): string =>
-  Number.isFinite(value) ? Number(value).toFixed(2) : "--";
+const formatFixed = (value: number | undefined, decimals: number): string =>
+  Number.isFinite(value) ? Number(value).toFixed(decimals) : "--";
 
 const formatTelemetryOutput = (
   key: DebugOutputKey,
@@ -126,15 +132,19 @@ const formatTelemetryOutput = (
     case "rejectReason":
       return telemetry.rejectReason;
     case "trigger":
-      return formatConfidence(telemetry.triggerConfidence);
+      return formatFixed(telemetry.triggerConfidence, 2);
     case "gunPose":
-      return formatConfidence(telemetry.gunPoseConfidence);
+      return formatFixed(telemetry.gunPoseConfidence, 2);
     case "counters":
       return `open=${String(telemetry.openFrames)} pull=${String(telemetry.pulledFrames)} track=${String(telemetry.trackingPresentFrames)} pose=${String(telemetry.nonGunPoseFrames)}`;
     case "rawIndexJitter":
-      return formatConfidence(telemetry.rawIndexJitter);
+      return formatFixed(telemetry.rawIndexJitter, 2);
     case "filterIndexJitter":
-      return formatConfidence(telemetry.filterIndexJitter);
+      return formatFixed(telemetry.filterIndexJitter, 2);
+    case "rawTriggerProjection":
+      return formatFixed(telemetry.rawTriggerProjection, 3);
+    case "filterTriggerProjection":
+      return formatFixed(telemetry.filterTriggerProjection, 3);
   }
 };
 

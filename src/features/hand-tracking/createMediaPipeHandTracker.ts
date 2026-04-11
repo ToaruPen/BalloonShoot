@@ -33,8 +33,8 @@ interface MediaPipeHandTracker {
 
 export interface LandmarkTrace {
   frameAtMs: number;
-  rawIndexTip: Point3D;
-  filteredIndexTip: Point3D;
+  rawFrame: HandFrame;
+  filteredFrame: HandFrame;
 }
 
 export interface MediaPipeHandTrackerOptions {
@@ -230,8 +230,8 @@ export const createMediaPipeHandTracker = async (
 
       options.onLandmarkTrace({
         frameAtMs,
-        rawIndexTip: raw.landmarks.indexTip,
-        filteredIndexTip: filtered.landmarks.indexTip
+        rawFrame: raw,
+        filteredFrame: filtered
       });
 
       return Promise.resolve(filtered);

@@ -593,8 +593,8 @@ describe("startApp", () => {
       if (frame) {
         capturedOptions?.onLandmarkTrace({
           frameAtMs: 0,
-          rawIndexTip: frame.landmarks.indexTip,
-          filteredIndexTip: frame.landmarks.indexTip
+          rawFrame: frame,
+          filteredFrame: frame
         });
       }
 
@@ -707,17 +707,23 @@ describe("startApp", () => {
     overlayRoot.click("start");
     await tickCountdown(3);
 
+    const baseFrame = createThumbTriggerFrame("open");
+    const withIndexTipX = (frame: HandFrame, x: number): HandFrame => ({
+      ...frame,
+      landmarks: { ...frame.landmarks, indexTip: { x, y: 0.2, z: 0 } }
+    });
+
     // Feed a raw-vs-filtered step change through the sink so the jitter
     // trackers register a non-zero spread.
     capturedOptions?.onLandmarkTrace({
       frameAtMs: 0,
-      rawIndexTip: { x: 0.1, y: 0.2, z: 0 },
-      filteredIndexTip: { x: 0.1, y: 0.2, z: 0 }
+      rawFrame: withIndexTipX(baseFrame, 0.1),
+      filteredFrame: withIndexTipX(baseFrame, 0.1)
     });
     capturedOptions?.onLandmarkTrace({
       frameAtMs: 33,
-      rawIndexTip: { x: 0.5, y: 0.2, z: 0 },
-      filteredIndexTip: { x: 0.15, y: 0.2, z: 0 }
+      rawFrame: withIndexTipX(baseFrame, 0.5),
+      filteredFrame: withIndexTipX(baseFrame, 0.15)
     });
 
     // Drive one tracking frame through the real processTrackingFrame loop so

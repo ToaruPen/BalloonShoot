@@ -58,7 +58,9 @@ const sampleTelemetry: DebugTelemetry = {
   trackingPresentFrames: 4,
   nonGunPoseFrames: 0,
   rawIndexJitter: 0.12,
-  filterIndexJitter: 0.03
+  filterIndexJitter: 0.03,
+  rawTriggerProjection: 0.128,
+  filterTriggerProjection: 0.054
 };
 
 describe("createDebugPanel", () => {
@@ -310,5 +312,17 @@ describe("createDebugPanel", () => {
 
     expect(rawJitterOutput.textContent).toBe("0.12");
     expect(filterJitterOutput.textContent).toBe("0.03");
+  });
+
+  it("renders raw and filtered trigger projection at 3 decimal precision", () => {
+    const panel = createDebugPanel(sampleInitial);
+    const rawTriggerOutput = createFakeOutput("rawTriggerProjection");
+    const filterTriggerOutput = createFakeOutput("filterTriggerProjection");
+
+    panel.bind([], [rawTriggerOutput, filterTriggerOutput]);
+    panel.setTelemetry(sampleTelemetry);
+
+    expect(rawTriggerOutput.textContent).toBe("0.128");
+    expect(filterTriggerOutput.textContent).toBe("0.054");
   });
 });

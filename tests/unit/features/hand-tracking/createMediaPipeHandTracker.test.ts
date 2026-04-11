@@ -280,8 +280,8 @@ describe("createMediaPipeHandTracker", () => {
     }
 
     expect(secondCall.frameAtMs).toBe(33);
-    expect(secondCall.rawIndexTip.x).toBeCloseTo(0.6);
-    expect(secondCall.filteredIndexTip.x).toBeLessThan(0.51);
+    expect(secondCall.rawFrame.landmarks.indexTip.x).toBeCloseTo(0.6);
+    expect(secondCall.filteredFrame.landmarks.indexTip.x).toBeLessThan(0.51);
   });
 
   it("does not emit a trace when the frame is empty", async () => {
