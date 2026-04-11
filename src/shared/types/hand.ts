@@ -22,10 +22,12 @@ export interface HandFrame {
   handedness?: HandednessCategory[];
   landmarks: {
     wrist: Point3D;
-    indexTip: Point3D;
-    indexMcp: Point3D;
-    thumbTip: Point3D;
     thumbIp: Point3D;
+    thumbTip: Point3D;
+    indexMcp: Point3D;
+    indexPip: Point3D;
+    indexDip: Point3D;
+    indexTip: Point3D;
     middleTip: Point3D;
     ringTip: Point3D;
     pinkyTip: Point3D;

@@ -28,6 +28,8 @@ const HAND_LANDMARK_INDEX = {
   thumbIp: 3,
   thumbTip: 4,
   indexMcp: 5,
+  indexPip: 6,
+  indexDip: 7,
   indexTip: 8,
   middleTip: 12,
   ringTip: 16,
@@ -57,6 +59,8 @@ const toHandFrame = (
   const thumbIp = toPoint3D(landmarks[HAND_LANDMARK_INDEX.thumbIp]);
   const thumbTip = toPoint3D(landmarks[HAND_LANDMARK_INDEX.thumbTip]);
   const indexMcp = toPoint3D(landmarks[HAND_LANDMARK_INDEX.indexMcp]);
+  const indexPip = toPoint3D(landmarks[HAND_LANDMARK_INDEX.indexPip]);
+  const indexDip = toPoint3D(landmarks[HAND_LANDMARK_INDEX.indexDip]);
   const indexTip = toPoint3D(landmarks[HAND_LANDMARK_INDEX.indexTip]);
   const middleTip = toPoint3D(landmarks[HAND_LANDMARK_INDEX.middleTip]);
   const ringTip = toPoint3D(landmarks[HAND_LANDMARK_INDEX.ringTip]);
@@ -65,7 +69,7 @@ const toHandFrame = (
   const handedness: HandednessCategory[] | undefined =
     selectedHandedness !== undefined && selectedHandedness.length > 0 ? selectedHandedness : undefined;
 
-  if (!wrist || !thumbIp || !thumbTip || !indexMcp || !indexTip || !middleTip || !ringTip || !pinkyTip) {
+  if (!wrist || !thumbIp || !thumbTip || !indexMcp || !indexPip || !indexDip || !indexTip || !middleTip || !ringTip || !pinkyTip) {
     return undefined;
   }
 
@@ -78,6 +82,8 @@ const toHandFrame = (
       thumbIp,
       thumbTip,
       indexMcp,
+      indexPip,
+      indexDip,
       indexTip,
       middleTip,
       ringTip,

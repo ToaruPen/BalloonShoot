@@ -12,6 +12,8 @@ const BASE_HEIGHT = 480;
 const BASE_LANDMARKS: HandFrame["landmarks"] = {
   wrist: { x: 0.4, y: 0.7, z: 0 },
   indexTip: { x: 0.5, y: 0.3, z: 0 },
+  indexDip: { x: 0, y: 0, z: 0 },
+  indexPip: { x: 0, y: 0, z: 0 },
   indexMcp: { x: 0.47, y: 0.48, z: 0 },
   thumbIp: { x: 0.37, y: 0.57, z: 0 },
   thumbTip: { x: 0.3, y: 0.6, z: 0 },
