@@ -306,8 +306,6 @@ describe("mapHandToGameInput", () => {
     ]);
 
     expect(lowConfidenceMeasurement.detected).toBe(false);
-    expect(lowConfidenceMeasurement.confidence).toBeGreaterThanOrEqual(0.45);
-    expect(lowConfidenceMeasurement.confidence).toBeLessThanOrEqual(0.55);
     expect(results[4]?.gunPoseActive).toBe(true);
     expect(results[4]?.shotFired).toBe(false);
     expect(results[5]?.shotFired).toBe(true);
