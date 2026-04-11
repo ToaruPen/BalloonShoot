@@ -27,14 +27,17 @@ declare global {
 
 const createBaseFrame = (): HandFrame => createIndexCurlFrame({ ratio: 1.4 }); // extended state
 
-// Helper to update a frame's curl state by adjusting the index finger ratio
-const withIndexCurlState = (frame: HandFrame, state: "extended" | "curled"): HandFrame => {
-  // Compute handScale from the frame to preserve the hand size
+// Helper to update a frame's curl state by adjusting the index finger ratio.
+// Spec D3 gates: extended ≥ 1.15, curled < 0.65, partial is the middle band.
+const withIndexCurlState = (
+  frame: HandFrame,
+  state: "extended" | "partial" | "curled"
+): HandFrame => {
   const wrist = frame.landmarks.wrist;
   const indexMcp = frame.landmarks.indexMcp;
   const handScale = Math.hypot(indexMcp.x - wrist.x, indexMcp.y - wrist.y) || 0.2;
 
-  const ratio = state === "extended" ? 1.4 : 0.45;
+  const ratio = state === "extended" ? 1.4 : state === "curled" ? 0.45 : 0.9;
   return createIndexCurlFrame({ ratio, handScale });
 };
 
@@ -222,14 +225,24 @@ const waitForFrameSequence = async (
 test.describe("issue-30 acceptance", () => {
   test("intentional pull emits exactly one shot", async ({ page }) => {
     const base = createBaseFrame();
+    // extended ×3 → partial (freeze) → curled ×2 → fire on the 6th frame.
     const frames = [
       withIndexCurlState(base, "extended"),
       withIndexCurlState(base, "extended"),
       withIndexCurlState(base, "extended"),
+      withIndexCurlState(base, "partial"),
       withIndexCurlState(base, "curled"),
       withIndexCurlState(base, "curled")
     ];
-    const expectedPhases = ["idle", "ready", "armed", "armed", "fired", "tracking_lost"];
+    const expectedPhases = [
+      "idle",
+      "ready",
+      "armed",
+      "armed",
+      "armed",
+      "fired",
+      "tracking_lost"
+    ];
 
     await bootHarness(page, frames);
     const snapshots = await waitForFrameSequence(page, expectedPhases);
@@ -250,6 +263,7 @@ test.describe("issue-30 acceptance", () => {
       withIndexCurlState(base, "extended"),
       withIndexCurlState(base, "extended"),
       withIndexCurlState(base, "extended"),
+      withIndexCurlState(base, "partial"),
       withIndexCurlState(base, "curled"),
       withIndexCurlState(base, "curled"),
       withIndexCurlState(base, "curled"),
@@ -258,6 +272,7 @@ test.describe("issue-30 acceptance", () => {
     const expectedPhases = [
       "idle",
       "ready",
+      "armed",
       "armed",
       "armed",
       "fired",
