@@ -186,4 +186,24 @@ describe("ShotIntentStateMachine (curl)", () => {
     const releaseEmitted = results.some((r) => r.crosshairLockAction === "release");
     expect(releaseEmitted).toBe(true);
   });
+
+  it("does not fire or freeze when rawCurlState jumps directly from extended to curled", () => {
+    // Design decision: partial → curled is the only path to fire. A classifier
+    // frame that skips straight from extended to curled (possible if ratio crashes
+    // below curledThreshold in one frame) must NOT promote curlState and MUST NOT
+    // emit a freeze action. The state machine should hold in "armed" until a
+    // partial frame is observed.
+    const results = runSequence([
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" }, // armed
+      { rawCurlState: "curled" },
+      { rawCurlState: "curled" }
+    ]);
+    expect(results[3]?.state.phase).toBe("armed");
+    expect(results[3]?.state.curlState).toBe("extended");
+    expect(results[3]?.crosshairLockAction).toBe("none");
+    expect(results[3]?.shotFired).toBe(false);
+    expect(results[4]?.shotFired).toBe(false);
+  });
 });
