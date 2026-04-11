@@ -20,15 +20,17 @@ export const measureGunPose = (frame: HandFrame): GunPoseMeasurement => {
   const curledFingerCount = [middleTip, ringTip, pinkyTip].filter(
     (point) => point.y > indexMcp.y + curledThreshold
   ).length;
-  const detected = indexExtended && curledFingerCount >= 2;
-  const rawConfidence = indexExtended ? Math.min(1, 0.5 + curledFingerCount / 6) : 0;
+
+  // Gun-pose is now defined ONLY by the other three fingers being folded.
+  // Index curl/extension is the curl trigger's responsibility, not gun-pose's.
+  const detected = curledFingerCount >= 2;
   const confidence = detected
-    ? rawConfidence
-    : Math.min(rawConfidence, FIRE_ENTRY_GUN_POSE_CONFIDENCE - Number.EPSILON);
+    ? Math.min(1, 0.5 + curledFingerCount / 6)
+    : Math.min(0.5, curledFingerCount / 6);
 
   return {
     detected,
-    confidence,
+    confidence: detected ? Math.max(confidence, FIRE_ENTRY_GUN_POSE_CONFIDENCE) : confidence,
     details: {
       indexExtended,
       curledFingerCount,
