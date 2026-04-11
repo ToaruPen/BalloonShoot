@@ -1,29 +1,26 @@
-import { gameConfig } from "../../shared/config/gameConfig";
-import type { HandFrame } from "../../shared/types/hand";
-import {
-  smoothCrosshair,
-  type CrosshairPoint
-} from "./createCrosshairSmoother";
+import { gameConfig } from '../../shared/config/gameConfig';
+import type { HandFrame } from '../../shared/types/hand';
+import type { CrosshairPoint } from './createCrosshairSmoother';
 import {
   measureGunPose,
   type GunPoseMeasurement
-} from "./evaluateGunPose";
-import type { IndexCurlMeasurement } from "./evaluateIndexCurl";
+} from './evaluateGunPose';
 import {
-  measureThumbTrigger,
-  type ThumbTriggerMeasurement,
-  type TriggerState,
-  type TriggerTuning
-} from "./evaluateThumbTrigger";
-import type { ViewportSize } from "./projectLandmarkToViewport";
-import { projectLandmarkToViewport } from "./projectLandmarkToViewport";
+  measureIndexCurl,
+  type IndexCurlMeasurement,
+  type IndexCurlState,
+  type IndexCurlTuning
+} from './evaluateIndexCurl';
+import type { ViewportSize } from './projectLandmarkToViewport';
+import { projectLandmarkToViewport } from './projectLandmarkToViewport';
 
-interface HandEvidenceRuntimeState {
-  crosshair?: CrosshairPoint | undefined;
-  rawTriggerState?: TriggerState | undefined;
+export interface HandEvidenceRuntimeState {
+  rawCurlState?: IndexCurlState | undefined;
+  lastExtendedCrosshair?: CrosshairPoint | undefined;
+  lockedCrosshair?: CrosshairPoint | undefined;
 }
 
-export interface HandEvidenceTuning extends TriggerTuning {
+export interface HandEvidenceTuning extends IndexCurlTuning {
   smoothingAlpha: number;
 }
 
@@ -31,9 +28,7 @@ export interface HandEvidence {
   trackingPresent: boolean;
   frameAtMs: number | undefined;
   projectedCrosshairCandidate: CrosshairPoint | null;
-  smoothedCrosshairCandidate: CrosshairPoint | null;
   curl: IndexCurlMeasurement | null;
-  trigger: ThumbTriggerMeasurement | null;
   gunPose: GunPoseMeasurement | null;
 }
 
@@ -49,34 +44,26 @@ export const buildHandEvidence = (
       trackingPresent: false,
       frameAtMs,
       projectedCrosshairCandidate: null,
-      smoothedCrosshairCandidate: null,
       curl: null,
-      trigger: null,
       gunPose: null
     };
   }
 
-  const projectedCrosshair = projectLandmarkToViewport(
+  const projectedCrosshairCandidate = projectLandmarkToViewport(
     frame.landmarks.indexTip,
     { width: frame.width, height: frame.height },
     viewportSize,
     { mirrorX: true }
   );
-  const smoothedCrosshairCandidate = smoothCrosshair(
-    runtime?.crosshair,
-    projectedCrosshair,
-    tuning.smoothingAlpha
-  );
-  const trigger = measureThumbTrigger(frame, runtime?.rawTriggerState, tuning);
+
+  const curl = measureIndexCurl(frame, runtime?.rawCurlState, tuning);
   const gunPose = measureGunPose(frame);
 
   return {
     trackingPresent: true,
     frameAtMs,
-    projectedCrosshairCandidate: projectedCrosshair,
-    smoothedCrosshairCandidate,
-    curl: null,
-    trigger,
+    projectedCrosshairCandidate,
+    curl,
     gunPose
   };
 };
