@@ -4,9 +4,9 @@ Date: 2026-04-08
 
 ## Purpose
 
-This handoff is for the next Codex session that will start implementation work for the `BalloonShoot` PoC.
+This handoff is for the next Codex session that will review or continue the `BalloonShoot` PoC after the issue-30 implementation pass.
 
-The current session completed requirements/design alignment, wrote the formal PoC design, wrote the implementation plan, and ran external review passes on the design docs. No application code has been implemented yet.
+The current session completed requirements/design alignment, wrote the formal PoC design, wrote the implementation plan, implemented the issue-30 interaction contract, and ran external review passes on the design docs.
 
 ## Authoritative Documents
 
@@ -19,12 +19,23 @@ Read these first, in this order:
 
 ## Current Project State
 
-- Repository is still pre-implementation.
-- The implementation plan has been written but not executed.
+- Repository reflects the issue-30 implementation branch.
+- The implementation plan has been executed through the final docs alignment pass.
 - The PoC is Chrome-first.
 - Vanilla TypeScript + Canvas 2D is the chosen PoC stack.
 - MediaPipe Hand Landmarker is the chosen tracking stack.
 - The game core must stay reusable for a later Phaser migration.
+
+## Issue-30 Interaction Contract
+
+- Aim with the index finger.
+- Shoot with a loose gun pose plus a thumb-trigger open to pulled transition.
+- `pinch` is superseded and is not part of the PoC contract.
+- Gun-pose confidence uses a 0.55 entry threshold and a 0.45 exit threshold.
+- A low-confidence pulled frame can keep the visible pose armed while delaying fire until confidence recovers.
+- Reacquisition requires a fresh tracking-present frame before re-arming.
+- Tracking loss stays distinct from open-state behavior.
+- Debug-only telemetry exposes phase, reject reason, trigger confidence, gun-pose confidence, and counters.
 
 ## Fixed PoC Decisions
 
@@ -66,34 +77,30 @@ Latest committed history:
 - `695565f` `docs: add PoC foundation design`
 - `51f231f` `Initialize project docs and Codex remote setup`
 
-Current working tree is not clean. At the time of this handoff, these changes are uncommitted:
+Current working tree is not clean. At the time of this handoff, it contains the issue-30 implementation diff plus the Task 9 docs alignment edits.
 
-- modified: `docs/superpowers/specs/2026-04-08-poc-foundation-design.md`
-- untracked directory: `docs/superpowers/plans/`
+- modified tracked files include the issue-30 code path under `src/app/bootstrap/`, `src/features/debug/`, `src/features/input-mapping/`, `src/main.ts`, related tests, and the docs updates in `README.md` plus this handoff
+- untracked paths include `.playwright-mcp/`, `.sisyphus/`, `src/features/input-mapping/createHandEvidence.ts`, `src/features/input-mapping/shotIntentStateMachine.ts`, `test-results/`, and the new issue-30 test files
 
-This is expected. The current session added the implementation plan and a final design-note update that `AGENTS.md` files must be written in English.
+This is expected while the branch remains in active implementation and verification.
+
+## Verification
+
+- Final verification for the issue-30 branch is green: `npm run lint && npm run typecheck && npm run test && npm run test:e2e`.
+- After this docs pass, `npm run typecheck` still passes.
 
 ## Recommended First Actions in the Next Session
 
-1. Review the uncommitted docs changes.
-2. Commit the handoff-related docs before starting code changes.
-3. Execute `Task 1` from `docs/superpowers/plans/2026-04-08-poc-implementation.md`.
+1. Review the issue-30 docs trail and verification notes.
+2. Use the spec and this handoff as the contract source for any follow-up review or delegation.
+3. If further code work is needed, start from the existing implementation and keep the thumb-trigger contract intact.
 4. Prefer the subagent-driven execution path if available.
 
 ## First Execution Target
 
-Start with `Task 1: Bootstrap the Repo and Enforce Quality Gates`.
+The initial bootstrap tasks are already complete.
 
-That task establishes:
-
-- Vite + TypeScript project bootstrap
-- strict TS config
-- strict ESLint config
-- Prettier config
-- Vitest and Playwright setup
-- initial smoke verification
-
-Do not skip directly to MediaPipe integration before the quality gates exist.
+Keep any future work scoped to the implemented contract, the debug surface, and issue-30 follow-up review.
 
 ## Notes for the Next Session
 
