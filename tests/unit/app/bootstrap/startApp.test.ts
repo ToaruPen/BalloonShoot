@@ -505,18 +505,42 @@ describe("startApp", () => {
     await flushPromises();
 
     overlayRoot.click("start");
-    await tickCountdown(3);
+    await tickCountdown(2);
 
-    for (let index = 0; index < 10; index += 1) {
+    const drawCallsBeforePlaying = drawGameFrameMock.mock.calls.length;
+
+    await tickCountdown(1);
+
+    expect(overlayRoot.innerHTML).toContain('data-screen="playing"');
+
+    for (let index = 0; index < 20; index += 1) {
       await runNextAnimationFrame();
     }
 
-    const drawCalls = drawGameFrameMock.mock.calls.map(([, state]) => state as {
-      crosshair?: { x: number; y: number };
-    });
+    const drawCalls = drawGameFrameMock.mock.calls.slice(drawCallsBeforePlaying).map(([, state]) =>
+      state as {
+        crosshair?: { x: number; y: number };
+      }
+    );
 
-    expect(drawCalls.some((state) => state.crosshair === undefined)).toBe(true);
-    expect(drawCalls.some((state) => state.crosshair !== undefined)).toBe(true);
+    const crosshairTransitions = drawCalls.reduce<Array<"defined" | "undefined">>(
+      (transitions, state) => {
+        const nextTransition = state.crosshair === undefined ? "undefined" : "defined";
+
+        if (transitions.at(-1) !== nextTransition) {
+          transitions.push(nextTransition);
+        }
+
+        return transitions;
+      },
+      []
+    );
+
+    expect(crosshairTransitions.slice(0, 3)).toEqual([
+      "defined",
+      "undefined",
+      "defined"
+    ]);
   });
 
   it("keeps the app in ready state when tracker prewarm fails (non-fatal)", async () => {

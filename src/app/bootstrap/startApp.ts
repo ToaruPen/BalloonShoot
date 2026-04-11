@@ -296,6 +296,8 @@ export const startApp = (
           debugPanel.values
         );
 
+        const previousTrackedCrosshair = trackedCrosshair;
+
         inputRuntime = input.runtime;
         trackedCrosshair = input.crosshair;
         debugPanel.setTelemetry(toDebugTelemetry(input.runtime));
@@ -308,7 +310,7 @@ export const startApp = (
           void audio?.playShot().catch(logAudioPlaybackFailure("Shot"));
 
           const scoreBefore = engine.score;
-          const shotCrosshair = input.crosshair ?? trackedCrosshair;
+          const shotCrosshair = input.crosshair ?? previousTrackedCrosshair;
 
           if (shotCrosshair) {
             registerShot(engine, {
