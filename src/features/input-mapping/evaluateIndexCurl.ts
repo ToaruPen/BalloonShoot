@@ -65,7 +65,10 @@ interface ClassifyGates {
   curledReturnGate: number;
 }
 
-const classifyFromExtended = (ratio: number, gates: ClassifyGates): IndexCurlState => {
+// Baseline classifier used both for cold start (no prior state) and when the
+// prior state was "extended". Both cases classify against raw thresholds with
+// no return-gate hysteresis.
+const classifyByRawThresholds = (ratio: number, gates: ClassifyGates): IndexCurlState => {
   if (ratio >= gates.extendedThreshold) {
     return "extended";
   }
@@ -89,14 +92,6 @@ const classifyFromPartial = (ratio: number, gates: ClassifyGates): IndexCurlStat
   return ratio < gates.curledThreshold ? "curled" : "partial";
 };
 
-// Cold start: no prior state, classify by raw thresholds without a return gate.
-const classifyColdStart = (ratio: number, gates: ClassifyGates): IndexCurlState => {
-  if (ratio >= gates.extendedThreshold) {
-    return "extended";
-  }
-  return ratio < gates.curledThreshold ? "curled" : "partial";
-};
-
 const classify = (
   ratio: number,
   previous: IndexCurlState | undefined,
@@ -110,15 +105,14 @@ const classify = (
   };
 
   switch (previous) {
-    case "extended":
-      return classifyFromExtended(ratio, gates);
     case "curled":
       return classifyFromCurled(ratio, gates);
     case "partial":
       return classifyFromPartial(ratio, gates);
+    case "extended":
     case undefined:
     default:
-      return classifyColdStart(ratio, gates);
+      return classifyByRawThresholds(ratio, gates);
   }
 };
 

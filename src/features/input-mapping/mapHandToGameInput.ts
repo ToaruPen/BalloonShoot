@@ -18,11 +18,39 @@ import {
 } from "./shotIntentStateMachine";
 import type { ViewportSize } from "./projectLandmarkToViewport";
 
-type InputHandEvidenceRuntimeState = Omit<HandEvidenceRuntimeState, "rawCurlState"> & {
-  rawCurlState: IndexCurlState;
-};
+// Orchestration-owned fields — read and written only by `mapHandToGameInput`.
+// The state machine and `buildHandEvidence` do not see these fields.
+interface OrchestratorRuntimeExtras {
+  lastExtendedCrosshair?: CrosshairPoint | undefined;
+  lockedCrosshair?: CrosshairPoint | undefined;
+  curlRatio: number;
+  curlZDelta: number;
+}
 
-export interface InputRuntimeState extends ShotIntentState, InputHandEvidenceRuntimeState {}
+export type InputRuntimeState = ShotIntentState & HandEvidenceRuntimeState & OrchestratorRuntimeExtras;
+
+// `advanceShotIntentState` structurally spreads whatever state-like object it
+// receives. If we passed the full `InputRuntimeState`, orchestrator-only fields
+// would bleed through `intent.state` and defeat the ownership split. Pick the
+// ShotIntentState slice so the state machine only sees what it owns.
+const toShotIntentState = (runtime: InputRuntimeState | undefined): ShotIntentState | undefined => {
+  if (!runtime) {
+    return undefined;
+  }
+  return {
+    phase: runtime.phase,
+    rejectReason: runtime.rejectReason,
+    curlState: runtime.curlState,
+    rawCurlState: runtime.rawCurlState,
+    curlConfidence: runtime.curlConfidence,
+    gunPoseConfidence: runtime.gunPoseConfidence,
+    curledFrames: runtime.curledFrames,
+    extendedFrames: runtime.extendedFrames,
+    gunPoseActive: runtime.gunPoseActive,
+    nonGunPoseFrames: runtime.nonGunPoseFrames,
+    trackingPresentFrames: runtime.trackingPresentFrames
+  };
+};
 
 export interface GameInputFrame {
   crosshair?: CrosshairPoint;
@@ -36,18 +64,6 @@ export interface GameInputFrame {
 export interface InputTuning extends IndexCurlTuning {
   smoothingAlpha: number;
 }
-
-const stripHandEvidenceRuntime = (state: InputRuntimeState): InputRuntimeState => {
-  const {
-    rawCurlState: _rawCurlState,
-    lastExtendedCrosshair: _lastExtendedCrosshair,
-    lockedCrosshair: _lockedCrosshair,
-    curlRatio: _curlRatio,
-    curlZDelta: _curlZDelta,
-    ...rest
-  } = state;
-  return rest as InputRuntimeState;
-};
 
 const computeNextLastExtendedCrosshair = (
   evidence: HandEvidence,
@@ -103,7 +119,6 @@ export const mapHandToGameInput = (
   runtime: InputRuntimeState | undefined,
   tuning: InputTuning = gameConfig.input
 ): GameInputFrame => {
-  // (a) Build raw evidence (curl measurement, gun-pose, projected crosshair candidate).
   const evidence = buildHandEvidence(
     frame,
     viewportSize,
@@ -112,27 +127,22 @@ export const mapHandToGameInput = (
     tuning as HandEvidenceTuning
   );
 
-  // (b) Conditionally update lastExtendedCrosshair (only when raw curl is extended).
   const nextLastExtendedCrosshair = computeNextLastExtendedCrosshair(
     evidence,
     runtime,
     tuning.smoothingAlpha
   );
 
-  // (c) Drive the state machine.
-  const intent = advanceShotIntentState(runtime, evidence);
+  const intent = advanceShotIntentState(toShotIntentState(runtime), evidence);
 
-  // (d) Apply the crosshair lock action with the undefined-data physical guard.
   const nextLockedCrosshair = computeNextLockedCrosshair(
     intent,
     nextLastExtendedCrosshair,
     runtime?.lockedCrosshair
   );
 
-  // (e) Build the next runtime state.
-  const baseRuntime = stripHandEvidenceRuntime(intent.state as InputRuntimeState);
   const nextRuntime: InputRuntimeState = {
-    ...baseRuntime,
+    ...intent.state,
     rawCurlState:
       evidence.curl?.rawCurlState ?? intent.state.rawCurlState,
     curlRatio: evidence.curl?.details.ratio ?? runtime?.curlRatio ?? 0,
@@ -145,7 +155,6 @@ export const mapHandToGameInput = (
       : { lockedCrosshair: nextLockedCrosshair })
   };
 
-  // (f) Resolve the final crosshair the game will see.
   const finalCrosshair = resolveFinalCrosshair(
     intent,
     nextLockedCrosshair,

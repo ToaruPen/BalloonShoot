@@ -333,7 +333,8 @@ describe("startApp", () => {
       smoothingAlpha: inputConfig.smoothingAlpha,
       extendedThreshold: inputConfig.extendedThreshold,
       curledThreshold: inputConfig.curledThreshold,
-      zAssistWeight: inputConfig.zAssistWeight
+      zAssistWeight: inputConfig.zAssistWeight,
+      curlHysteresisGap: inputConfig.curlHysteresisGap
     });
     expect(debugPanelInstance.render).toHaveBeenCalled();
     expect(debugPanelInstance.bind).toHaveBeenCalled();

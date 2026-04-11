@@ -47,7 +47,8 @@ const createDefaultDebugValues = (): DebugValues => ({
   smoothingAlpha: gameConfig.input.smoothingAlpha,
   extendedThreshold: gameConfig.input.extendedThreshold,
   curledThreshold: gameConfig.input.curledThreshold,
-  zAssistWeight: gameConfig.input.zAssistWeight
+  zAssistWeight: gameConfig.input.zAssistWeight,
+  curlHysteresisGap: gameConfig.input.curlHysteresisGap
 });
 
 const toDebugTelemetry = (runtime: InputRuntimeState | undefined): DebugTelemetry | undefined =>
@@ -59,8 +60,8 @@ const toDebugTelemetry = (runtime: InputRuntimeState | undefined): DebugTelemetr
         rawCurlState: runtime.rawCurlState,
         curlConfidence: runtime.curlConfidence,
         gunPoseConfidence: runtime.gunPoseConfidence,
-        ratio: runtime.curlRatio ?? 0,
-        zDelta: runtime.curlZDelta ?? 0,
+        ratio: runtime.curlRatio,
+        zDelta: runtime.curlZDelta,
         extendedFrames: runtime.extendedFrames,
         curledFrames: runtime.curledFrames,
         trackingPresentFrames: runtime.trackingPresentFrames,
@@ -296,7 +297,7 @@ export const startApp = (
           handFrame,
           { width: canvas.width, height: canvas.height },
           inputRuntime,
-          { ...gameConfig.input, ...debugPanel.values }
+          debugPanel.values
         );
 
         const previousTrackedCrosshair = trackedCrosshair;

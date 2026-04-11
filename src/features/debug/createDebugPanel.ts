@@ -3,7 +3,17 @@ export interface DebugValues {
   extendedThreshold: number;
   curledThreshold: number;
   zAssistWeight: number;
+  // Passthrough — not user-tunable via slider. Stored on the panel values so
+  // the object can be handed directly to `mapHandToGameInput` as `InputTuning`
+  // without a per-frame merge.
+  curlHysteresisGap: number;
 }
+
+type DebugSliderKey =
+  | "smoothingAlpha"
+  | "extendedThreshold"
+  | "curledThreshold"
+  | "zAssistWeight";
 
 export interface DebugInputElement {
   /** `data-debug` attribute from the HTML, exposed as `dataset.debug` by the DOM. */
@@ -57,11 +67,11 @@ const DEBUG_KEYS = [
   "extendedThreshold",
   "curledThreshold",
   "zAssistWeight"
-] as const satisfies readonly (keyof DebugValues)[];
+] as const satisfies readonly DebugSliderKey[];
 
 const DEBUG_KEY_SET: ReadonlySet<string> = new Set(DEBUG_KEYS);
 
-const DEBUG_META: Record<keyof DebugValues, DebugControlMeta> = {
+const DEBUG_META: Record<DebugSliderKey, DebugControlMeta> = {
   smoothingAlpha: { label: "Smoothing", min: 0.1, max: 0.6, step: 0.01 },
   extendedThreshold: { label: "Extended", min: 0.9, max: 1.6, step: 0.01 },
   curledThreshold: { label: "Curled", min: 0.4, max: 0.9, step: 0.01 },
@@ -102,13 +112,13 @@ interface RatioStats {
   max: number | undefined;
 }
 
-const isDebugKey = (key: string | undefined): key is keyof DebugValues =>
+const isDebugKey = (key: string | undefined): key is DebugSliderKey =>
   key !== undefined && DEBUG_KEY_SET.has(key);
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
-const clampToMeta = (key: keyof DebugValues, value: number): number => {
+const clampToMeta = (key: DebugSliderKey, value: number): number => {
   const meta = DEBUG_META[key];
   const safeValue = Number.isFinite(value) ? value : meta.min;
   return clamp(safeValue, meta.min, meta.max);
@@ -119,7 +129,7 @@ const countDecimals = (value: number): number => {
   return decimals.length;
 };
 
-const formatForInput = (key: keyof DebugValues, value: number): string =>
+const formatForInput = (key: DebugSliderKey, value: number): string =>
   String(Number(value.toFixed(countDecimals(DEBUG_META[key].step))));
 
 const formatRatio = (value: number | undefined): string =>
@@ -219,18 +229,19 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
   const values: DebugValues = {
     smoothingAlpha: clampToMeta("smoothingAlpha", initial.smoothingAlpha),
     zAssistWeight: clampToMeta("zAssistWeight", initial.zAssistWeight),
+    curlHysteresisGap: initial.curlHysteresisGap,
     ...normalizeInitialCurlThresholds(
       initial.extendedThreshold,
       initial.curledThreshold
     )
   };
-  const boundInputs: Partial<Record<keyof DebugValues, DebugInputElement>> = {};
+  const boundInputs: Partial<Record<DebugSliderKey, DebugInputElement>> = {};
   const boundOutputs: Partial<Record<DebugOutputKey, DebugOutputElement>> = {};
   const ratioHistory: number[] = [];
   let telemetry: DebugTelemetry | undefined;
   let stats = computeRatioStats(ratioHistory);
 
-  const renderRow = (key: keyof DebugValues): string => {
+  const renderRow = (key: DebugSliderKey): string => {
     const meta = DEBUG_META[key];
     return `<label class="debug-panel-row">${meta.label}<input data-debug="${key}" type="range" min="${String(meta.min)}" max="${String(meta.max)}" step="${String(meta.step)}" value="${formatForInput(key, values[key])}" /></label>`;
   };
@@ -244,7 +255,7 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
     return `<aside class="debug-panel" aria-label="debug controls">${rows}${telemetryRows}</aside>`;
   };
 
-  const syncInputValue = (key: keyof DebugValues): void => {
+  const syncInputValue = (key: DebugSliderKey): void => {
     const input = boundInputs[key];
 
     if (!input) {
@@ -272,7 +283,10 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
       return;
     }
 
-    output.textContent = formatTelemetryOutput(key, telemetry, stats);
+    const nextText = formatTelemetryOutput(key, telemetry, stats);
+    if (output.textContent !== nextText) {
+      output.textContent = nextText;
+    }
   };
 
   const setTelemetry = (nextTelemetry: DebugTelemetry | undefined): void => {

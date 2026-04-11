@@ -11,7 +11,8 @@ const sampleInitial: DebugValues = {
   smoothingAlpha: 0.28,
   extendedThreshold: 1.15,
   curledThreshold: 0.65,
-  zAssistWeight: 0
+  zAssistWeight: 0,
+  curlHysteresisGap: 0.05
 };
 
 const sampleTelemetry: DebugTelemetry = {
@@ -164,7 +165,8 @@ describe("createDebugPanel", () => {
       smoothingAlpha: 0.28,
       extendedThreshold: 0.95,
       curledThreshold: 0.92,
-      zAssistWeight: 0
+      zAssistWeight: 0,
+      curlHysteresisGap: 0.05
     });
 
     expect(panel.values.extendedThreshold).toBeCloseTo(0.97);

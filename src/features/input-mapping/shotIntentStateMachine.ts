@@ -27,7 +27,6 @@ export interface ShotIntentState {
   gunPoseConfidence: number;
   curledFrames: number;
   extendedFrames: number;
-  hasSeenStableExtended: boolean;
   gunPoseActive: boolean;
   nonGunPoseFrames: number;
   trackingPresentFrames: number;
@@ -55,7 +54,6 @@ const createInitialShotIntentState = (): ShotIntentState => ({
   gunPoseConfidence: 0,
   curledFrames: 0,
   extendedFrames: 0,
-  hasSeenStableExtended: false,
   gunPoseActive: false,
   nonGunPoseFrames: 0,
   trackingPresentFrames: 0
@@ -168,7 +166,6 @@ const withTrackingLossReset = (state: ShotIntentState): ShotIntentState => ({
   gunPoseConfidence: 0,
   curledFrames: 0,
   extendedFrames: 0,
-  hasSeenStableExtended: false,
   gunPoseActive: false,
   nonGunPoseFrames: 0,
   trackingPresentFrames: 0
@@ -190,7 +187,6 @@ const withPoseLossReset = (
   gunPoseConfidence,
   curledFrames: 0,
   extendedFrames: 0,
-  hasSeenStableExtended: false,
   gunPoseActive: false,
   nonGunPoseFrames,
   trackingPresentFrames
@@ -237,7 +233,6 @@ const resolveTrackingLostState = (
       gunPoseConfidence: gunPose.gunPoseConfidence,
       curledFrames: curl.curledFrames,
       extendedFrames: curl.extendedFrames,
-      hasSeenStableExtended: false,
       gunPoseActive: gunPose.gunPoseActive,
       nonGunPoseFrames: gunPose.nonGunPoseFrames,
       trackingPresentFrames
@@ -263,8 +258,6 @@ const buildTrackedState = (
   gunPoseConfidence: gunPose.gunPoseConfidence,
   curledFrames: curl.curledFrames,
   extendedFrames: curl.extendedFrames,
-  hasSeenStableExtended:
-    phase === "ready" || phase === "armed" || phase === "recovering" || stateBefore.hasSeenStableExtended,
   gunPoseActive: gunPose.gunPoseActive,
   nonGunPoseFrames: gunPose.nonGunPoseFrames,
   trackingPresentFrames
@@ -281,14 +274,9 @@ const advanceIdlePhase = (
     trackingPresentFrames >= TRACKING_RECOVERY_FRAMES && gunPose.gunPoseActive && gunPoseFireReady;
   const stableExtended = curl.curlState === "extended" && curl.extendedFrames >= TRIGGER_RELEASE_FRAMES;
   const phase: ShotIntentPhase = trackingAndPoseReady && stableExtended ? "ready" : "idle";
-  const nextState = buildTrackedState(stateBefore, phase, curl, gunPose, trackingPresentFrames);
-
-  if (phase === "idle") {
-    nextState.hasSeenStableExtended = stateBefore.hasSeenStableExtended || (trackingAndPoseReady && stableExtended);
-  }
 
   return {
-    state: nextState,
+    state: buildTrackedState(stateBefore, phase, curl, gunPose, trackingPresentFrames),
     shotFired: false,
     crosshairLockAction: "none"
   };

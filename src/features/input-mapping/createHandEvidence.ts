@@ -14,12 +14,11 @@ import {
 import type { ViewportSize } from './projectLandmarkToViewport';
 import { projectLandmarkToViewport } from './projectLandmarkToViewport';
 
+// `buildHandEvidence` only needs the prior `rawCurlState` to seed curl
+// hysteresis. Orchestration-owned fields (`lastExtendedCrosshair`,
+// `lockedCrosshair`, `curlRatio`, `curlZDelta`) live in `mapHandToGameInput`.
 export interface HandEvidenceRuntimeState {
   rawCurlState?: IndexCurlState | undefined;
-  lastExtendedCrosshair?: CrosshairPoint | undefined;
-  lockedCrosshair?: CrosshairPoint | undefined;
-  curlRatio?: number | undefined;
-  curlZDelta?: number | undefined;
 }
 
 export interface HandEvidenceTuning extends IndexCurlTuning {
