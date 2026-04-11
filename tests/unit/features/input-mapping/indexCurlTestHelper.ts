@@ -1,6 +1,6 @@
 import type { HandFrame } from "../../../../src/shared/types/hand";
 
-export interface IndexCurlFrameOptions {
+interface IndexCurlFrameOptions {
   /** distance(indexTip, indexMcp) / handScale value to bake into the frame */
   ratio: number;
   /** handScale = hypot(indexMcp - wrist). Default 1 (unit scale) */

@@ -37,8 +37,6 @@ export interface InputTuning extends IndexCurlTuning {
   smoothingAlpha: number;
 }
 
-export { buildHandEvidence } from "./createHandEvidence";
-
 const stripHandEvidenceRuntime = (state: InputRuntimeState): InputRuntimeState => {
   const {
     rawCurlState: _rawCurlState,

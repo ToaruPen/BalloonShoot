@@ -58,46 +58,67 @@ const computeRatio = (frame: HandFrame): number | undefined => {
   return tipToMcp / handScale;
 };
 
+interface ClassifyGates {
+  extendedThreshold: number;
+  curledThreshold: number;
+  extendedReturnGate: number;
+  curledReturnGate: number;
+}
+
+const classifyFromExtended = (ratio: number, gates: ClassifyGates): IndexCurlState => {
+  if (ratio >= gates.extendedThreshold) {
+    return "extended";
+  }
+  return ratio < gates.curledThreshold ? "curled" : "partial";
+};
+
+const classifyFromCurled = (ratio: number, gates: ClassifyGates): IndexCurlState => {
+  if (ratio <= gates.curledReturnGate) {
+    return "curled";
+  }
+  return ratio >= gates.extendedReturnGate ? "extended" : "partial";
+};
+
+// Spec D3: partial → extended needs the hysteresis gap to prevent single-frame
+// flicker re-arming after a freeze. partial → curled has no gap (fires on first
+// sub-threshold frame so curled confirmation can start immediately).
+const classifyFromPartial = (ratio: number, gates: ClassifyGates): IndexCurlState => {
+  if (ratio >= gates.extendedReturnGate) {
+    return "extended";
+  }
+  return ratio < gates.curledThreshold ? "curled" : "partial";
+};
+
+// Cold start: no prior state, classify by raw thresholds without a return gate.
+const classifyColdStart = (ratio: number, gates: ClassifyGates): IndexCurlState => {
+  if (ratio >= gates.extendedThreshold) {
+    return "extended";
+  }
+  return ratio < gates.curledThreshold ? "curled" : "partial";
+};
+
 const classify = (
   ratio: number,
   previous: IndexCurlState | undefined,
   tuning: IndexCurlTuning
 ): IndexCurlState => {
-  const { extendedThreshold, curledThreshold, curlHysteresisGap } = tuning;
-  const extendedReturnGate = extendedThreshold + curlHysteresisGap;
-  const curledReturnGate = curledThreshold + curlHysteresisGap;
+  const gates: ClassifyGates = {
+    extendedThreshold: tuning.extendedThreshold,
+    curledThreshold: tuning.curledThreshold,
+    extendedReturnGate: tuning.extendedThreshold + tuning.curlHysteresisGap,
+    curledReturnGate: tuning.curledThreshold + tuning.curlHysteresisGap
+  };
 
   switch (previous) {
     case "extended":
-      if (ratio < extendedThreshold) {
-        return ratio < curledThreshold ? "curled" : "partial";
-      }
-      return "extended";
+      return classifyFromExtended(ratio, gates);
     case "curled":
-      if (ratio > curledReturnGate) {
-        return ratio >= extendedReturnGate ? "extended" : "partial";
-      }
-      return "curled";
+      return classifyFromCurled(ratio, gates);
     case "partial":
-      // Spec D3: partial → extended needs the hysteresis gap to prevent
-      // single-frame flicker re-arming after a freeze.
-      if (ratio >= extendedReturnGate) {
-        return "extended";
-      }
-      if (ratio < curledThreshold) {
-        return "curled";
-      }
-      return "partial";
+      return classifyFromPartial(ratio, gates);
     case undefined:
     default:
-      // Cold start: classify by raw thresholds without a gate.
-      if (ratio >= extendedThreshold) {
-        return "extended";
-      }
-      if (ratio < curledThreshold) {
-        return "curled";
-      }
-      return "partial";
+      return classifyColdStart(ratio, gates);
   }
 };
 

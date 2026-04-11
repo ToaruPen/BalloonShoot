@@ -45,7 +45,3 @@ export const measureGunPose = (frame: HandFrame): GunPoseMeasurement => {
     }
   };
 };
-
-export const evaluateGunPose = (frame: HandFrame): boolean => {
-  return measureGunPose(frame).detected;
-};
