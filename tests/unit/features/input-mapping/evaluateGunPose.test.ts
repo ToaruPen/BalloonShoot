@@ -56,4 +56,29 @@ describe("measureGunPose", () => {
     expect(result.details.indexExtended).toBe(false);
     expect(result.detected).toBe(true);
   });
+
+  it("keeps confidence above FIRE_EXIT_GUN_POSE_CONFIDENCE for a 'two fingers un-folded' wobble", () => {
+    // Pose-drop tolerance contract: a frame where only one of middle/ring/pinky
+    // is folded must still produce confidence > 0.45 so the state machine's
+    // hysteresis exit can keep `armed` alive for a frame.
+    const wobble = buildFrame({
+      middleTip: { x: 0.52, y: 0.4, z: 0 }, // un-folded
+      ringTip: { x: 0.54, y: 0.4, z: 0 } // un-folded; only pinky folded
+    });
+    const result = measureGunPose(wobble);
+    expect(result.detected).toBe(false);
+    expect(result.details.curledFingerCount).toBe(1);
+    expect(result.confidence).toBeGreaterThan(0.45);
+  });
+
+  it("collapses confidence to 0 when no fingers are folded (fully open hand drops out)", () => {
+    const open = buildFrame({
+      middleTip: { x: 0.52, y: 0.4, z: 0 },
+      ringTip: { x: 0.54, y: 0.4, z: 0 },
+      pinkyTip: { x: 0.56, y: 0.4, z: 0 }
+    });
+    const result = measureGunPose(open);
+    expect(result.detected).toBe(false);
+    expect(result.confidence).toBe(0);
+  });
 });

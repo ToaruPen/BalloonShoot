@@ -24,13 +24,20 @@ export const measureGunPose = (frame: HandFrame): GunPoseMeasurement => {
   // Gun-pose is now defined ONLY by the other three fingers being folded.
   // Index curl/extension is the curl trigger's responsibility, not gun-pose's.
   const detected = curledFingerCount >= 2;
+  // Confidence shape mirrors the previous trigger's: high when detected, capped
+  // just below FIRE_ENTRY for "near-pose" frames so the state machine's
+  // FIRE_EXIT_GUN_POSE_CONFIDENCE = 0.45 hysteresis still keeps `armed` alive
+  // through a single-frame finger wobble. A frame with zero folded fingers
+  // collapses to 0 so a fully open hand drops out cleanly.
+  const hasAnyFold = curledFingerCount >= 1;
+  const rawConfidence = hasAnyFold ? Math.min(1, 0.5 + curledFingerCount / 6) : 0;
   const confidence = detected
-    ? Math.min(1, 0.5 + curledFingerCount / 6)
-    : Math.min(0.5, curledFingerCount / 6);
+    ? rawConfidence
+    : Math.min(rawConfidence, FIRE_ENTRY_GUN_POSE_CONFIDENCE - Number.EPSILON);
 
   return {
     detected,
-    confidence: detected ? Math.max(confidence, FIRE_ENTRY_GUN_POSE_CONFIDENCE) : confidence,
+    confidence,
     details: {
       indexExtended,
       curledFingerCount,
