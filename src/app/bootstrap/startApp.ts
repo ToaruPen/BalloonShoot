@@ -6,10 +6,7 @@ import {
   type DebugValues
 } from "../../features/debug/createDebugPanel";
 import { createGameEngine, registerShot } from "../../features/gameplay/domain/createGameEngine";
-import {
-  createMediaPipeHandTracker,
-  type MediaPipeHandTracker
-} from "../../features/hand-tracking/createMediaPipeHandTracker";
+import { createMediaPipeHandTracker } from "../../features/hand-tracking/createMediaPipeHandTracker";
 import {
   mapHandToGameInput,
   type InputRuntimeState
@@ -23,12 +20,14 @@ import { createInitialAppState, reduceAppEvent } from "../state/reduceAppEvent";
 const CROSSHAIR_Y_RATIO = 0.62;
 
 export interface StartAppDebugHooks {
-  createHandTracker?: () => Promise<MediaPipeHandTracker>;
+  createHandTracker?: () => Promise<HandTrackerLike>;
 }
 
 interface ImageCaptureLike {
   grabFrame(): Promise<ImageBitmap>;
 }
+
+type HandTrackerLike = Pick<Awaited<ReturnType<typeof createMediaPipeHandTracker>>, "detect">;
 
 type ImageCaptureConstructorLike = new (track: MediaStreamTrack) => ImageCaptureLike;
 
