@@ -1,5 +1,7 @@
 import type { HandFrame } from "../../shared/types/hand";
 
+const FIRE_ENTRY_GUN_POSE_CONFIDENCE = 0.55;
+
 export interface GunPoseMeasurement {
   detected: boolean;
   confidence: number;
@@ -19,7 +21,10 @@ export const measureGunPose = (frame: HandFrame): GunPoseMeasurement => {
     (point) => point.y > indexMcp.y + curledThreshold
   ).length;
   const detected = indexExtended && curledFingerCount >= 2;
-  const confidence = indexExtended ? Math.min(1, 0.5 + (curledFingerCount / 6)) : 0;
+  const rawConfidence = indexExtended ? Math.min(1, 0.5 + curledFingerCount / 6) : 0;
+  const confidence = detected
+    ? rawConfidence
+    : Math.min(rawConfidence, FIRE_ENTRY_GUN_POSE_CONFIDENCE - Number.EPSILON);
 
   return {
     detected,

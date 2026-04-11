@@ -66,8 +66,9 @@ const createArmedRuntime = (): GameInputFrame["runtime"] => {
   const openFrame = withThumbTriggerPose(createThumbTriggerFrame("open"), "open");
   const first = mapHandToGameInput(openFrame, canvasSize, undefined, gameConfig.input);
   const second = mapHandToGameInput(openFrame, canvasSize, first.runtime, gameConfig.input);
+  const third = mapHandToGameInput(openFrame, canvasSize, second.runtime, gameConfig.input);
 
-  return second.runtime;
+  return third.runtime;
 };
 
 describe("tracking loss", () => {
