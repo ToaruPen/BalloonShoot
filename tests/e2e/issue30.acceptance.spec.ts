@@ -125,7 +125,7 @@ const bootHarness = async (page: Page, frames: (HandFrame | undefined)[]): Promi
           Promise.resolve({
             detect: () => {
               if (detectCount >= frames.length) {
-                return new Promise<HandFrame | undefined>(() => undefined);
+                return Promise.resolve(undefined);
               }
 
               const nextFrame = frames[detectCount];
@@ -215,7 +215,8 @@ test.describe("issue-30 acceptance", () => {
       "ready",
       "armed",
       "armed",
-      "fired"
+      "fired",
+      "tracking_lost"
     ]);
     expect(snapshots).toContainEqual(
       expect.objectContaining({
@@ -249,10 +250,11 @@ test.describe("issue-30 acceptance", () => {
       "armed",
       "fired",
       "recovering",
-      "recovering"
+      "recovering",
+      "tracking_lost"
     ]);
     expect(snapshots.filter((snapshot) => snapshot.phase === "fired")).toHaveLength(1);
-    expect(snapshots.at(-1)?.rejectReason).toBe("waiting_for_release");
+    expect(snapshots.at(-1)?.rejectReason).toBe("tracking_lost");
   });
 
   test("brief thumb jitter does not fire", async ({ page }) => {
