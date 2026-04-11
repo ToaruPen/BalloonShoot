@@ -1,6 +1,6 @@
 import type { Balloon } from "../gameplay/domain/balloon";
 
-export interface DrawState {
+interface DrawState {
   balloons: Balloon[];
   crosshair?: {
     x: number;

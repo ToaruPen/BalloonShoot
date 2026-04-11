@@ -1,5 +1,3 @@
-export type ScreenName = "permission" | "ready" | "countdown" | "playing" | "result";
-
 interface HudState {
   score: number;
   combo: number;

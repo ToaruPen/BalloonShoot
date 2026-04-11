@@ -2,7 +2,7 @@ import type { HandFrame, Point3D } from "../../../../src/shared/types/hand";
 
 export type ThumbTriggerPose = "open" | "latched" | "pulled";
 
-export interface ThumbTriggerGeometryOptions {
+interface ThumbTriggerGeometryOptions {
   scale?: number;
 }
 

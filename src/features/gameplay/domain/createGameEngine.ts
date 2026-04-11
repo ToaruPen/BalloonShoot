@@ -2,13 +2,13 @@ import type { Balloon } from "./balloon";
 import { getDifficultyProfile } from "./difficulty";
 import { registerHitScore, registerMissScore, type ScoreState } from "./scoring";
 
-export interface ShotInput {
+interface ShotInput {
   x: number;
   y: number;
   hit: boolean;
 }
 
-export interface GameEngine {
+interface GameEngine {
   timeRemainingMs: number;
   elapsedMs: number;
   balloons: Balloon[];
