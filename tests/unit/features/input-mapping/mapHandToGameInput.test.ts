@@ -213,7 +213,7 @@ describe("mapHandToGameInput", () => {
     expect(trigger.rawState).toBe("open");
     expect(trigger.confidence).toBeGreaterThanOrEqual(0);
     expect(trigger.confidence).toBeLessThanOrEqual(1);
-    expect(trigger.details.projection).toEqual(expect.any(Number));
+    expect(trigger.details.cosine).toEqual(expect.any(Number));
     expect(gunPose.detected).toBe(true);
     expect(gunPose.confidence).toBeGreaterThanOrEqual(0);
     expect(gunPose.confidence).toBeLessThanOrEqual(1);

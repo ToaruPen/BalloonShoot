@@ -13,7 +13,7 @@ import {
 } from "../../features/hand-tracking/createMediaPipeHandTracker";
 import type { OneEuroFilterConfig } from "../../features/hand-tracking/oneEuroFilter";
 import { createLandmarkJitterTracker } from "../../features/hand-tracking/landmarkJitter";
-import { measureThumbPull } from "../../features/input-mapping/evaluateThumbTrigger";
+import { measureThumbCosine } from "../../features/input-mapping/evaluateThumbTrigger";
 import {
   mapHandToGameInput,
   type InputRuntimeState
@@ -196,8 +196,8 @@ export const startApp = (
     const filteredIndexTip = trace.filteredFrame.landmarks.indexTip;
     rawJitterTracker.push(rawIndexTip.x, rawIndexTip.y);
     filterJitterTracker.push(filteredIndexTip.x, filteredIndexTip.y);
-    latestRawTriggerProjection = measureThumbPull(trace.rawFrame);
-    latestFilterTriggerProjection = measureThumbPull(trace.filteredFrame);
+    latestRawTriggerProjection = measureThumbCosine(trace.rawFrame);
+    latestFilterTriggerProjection = measureThumbCosine(trace.filteredFrame);
   };
 
   const ctx = canvas.getContext("2d");

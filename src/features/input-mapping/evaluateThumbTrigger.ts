@@ -7,7 +7,7 @@ export interface ThumbTriggerMeasurement {
   rawState: TriggerState;
   confidence: number;
   details: {
-    projection: number;
+    cosine: number;
     pullThreshold: number;
     releaseThreshold: number;
   };
@@ -20,17 +20,29 @@ export interface TriggerTuning {
 
 const HYSTERESIS_GAP = 0.01;
 
-export const measureThumbPull = (frame: HandFrame): number => {
-  const { wrist, indexMcp, thumbIp, thumbTip } = frame.landmarks;
-  const handScale = Math.hypot(indexMcp.x - wrist.x, indexMcp.y - wrist.y) || 1;
-  const axisX = indexMcp.x - thumbIp.x;
-  const axisY = indexMcp.y - thumbIp.y;
-  const axisLength = Math.hypot(axisX, axisY) || 1;
-  const thumbX = thumbTip.x - thumbIp.x;
-  const thumbY = thumbTip.y - thumbIp.y;
-  const projection = (thumbX * axisX + thumbY * axisY) / axisLength;
+// 3D cosine of the angle at thumbIp between the thumb tip and the index MCP:
+// neutral finger-gun pose (thumb extended outward) yields negative values,
+// pulling the thumb toward the index knuckle rotates the tip vector toward
+// the index direction so the cosine rises toward +1. Lateral (x/y-plane) and
+// palmward (z) hammer motions both reduce the angle, so one scalar covers
+// both gesture styles.
+// MediaPipe normalizes x/y per axis, so deltas are converted to pixel space
+// before the dot product — otherwise a non-square frame skews the contributions.
+export const measureThumbCosine = (frame: HandFrame): number => {
+  const { indexMcp, thumbIp, thumbTip } = frame.landmarks;
+  const w = frame.width;
+  const h = frame.height;
+  const v1x = (thumbTip.x - thumbIp.x) * w;
+  const v1y = (thumbTip.y - thumbIp.y) * h;
+  const v1z = (thumbTip.z - thumbIp.z) * w;
+  const v2x = (indexMcp.x - thumbIp.x) * w;
+  const v2y = (indexMcp.y - thumbIp.y) * h;
+  const v2z = (indexMcp.z - thumbIp.z) * w;
+  const dot = v1x * v2x + v1y * v2y + v1z * v2z;
+  const m1 = Math.hypot(v1x, v1y, v1z) || 1;
+  const m2 = Math.hypot(v2x, v2y, v2z) || 1;
 
-  return projection / handScale;
+  return dot / (m1 * m2);
 };
 
 const normalizeTriggerTuning = (tuning: TriggerTuning): TriggerTuning => {
@@ -57,14 +69,14 @@ export const measureThumbTrigger = (
   previousState: TriggerState | undefined,
   tuning: TriggerTuning = gameConfig.input
 ): ThumbTriggerMeasurement => {
-  const thumbPull = measureThumbPull(frame);
+  const cosine = measureThumbCosine(frame);
   const safeTuning = normalizeTriggerTuning(tuning);
   const rawState =
     previousState === "pulled"
-      ? thumbPull > safeTuning.triggerReleaseThreshold
+      ? cosine > safeTuning.triggerReleaseThreshold
         ? "pulled"
         : "open"
-      : thumbPull > safeTuning.triggerPullThreshold
+      : cosine > safeTuning.triggerPullThreshold
         ? "pulled"
         : "open";
   const confidenceRange = Math.max(
@@ -73,14 +85,14 @@ export const measureThumbTrigger = (
   );
   const confidence =
     rawState === "pulled"
-      ? clamp01((thumbPull - safeTuning.triggerReleaseThreshold) / confidenceRange)
-      : clamp01((safeTuning.triggerPullThreshold - thumbPull) / confidenceRange);
+      ? clamp01((cosine - safeTuning.triggerReleaseThreshold) / confidenceRange)
+      : clamp01((safeTuning.triggerPullThreshold - cosine) / confidenceRange);
 
   return {
     rawState,
     confidence,
     details: {
-      projection: thumbPull,
+      cosine,
       pullThreshold: safeTuning.triggerPullThreshold,
       releaseThreshold: safeTuning.triggerReleaseThreshold
     }

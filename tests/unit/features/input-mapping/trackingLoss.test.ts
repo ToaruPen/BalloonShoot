@@ -28,8 +28,8 @@ const createEvidence = ({
         rawState: triggerState,
         confidence: 1,
         details: {
-          projection: 0.25,
-          pullThreshold: 0.18,
+          cosine: 0.45,
+          pullThreshold: 0.3,
           releaseThreshold: 0.1
         }
       }

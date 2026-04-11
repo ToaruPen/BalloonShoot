@@ -7,3 +7,5 @@ coverage/
 .superpowers/
 .claude/
 *.tsbuildinfo
+test-results/
+playwright-report/

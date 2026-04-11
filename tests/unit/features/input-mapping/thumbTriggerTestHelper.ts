@@ -20,10 +20,15 @@ const BASE_LANDMARKS: HandFrame["landmarks"] = {
   pinkyTip: { x: 0.39, y: 0.67, z: 0 }
 };
 
-const TRIGGER_PROJECTION: Record<ThumbTriggerPose, number> = {
-  open: 0.06,
-  latched: 0.11,
-  pulled: 0.22
+// Canonical poses targeted at cosine values that straddle the default
+// triggerReleaseThreshold (0.1) and triggerPullThreshold (0.3).
+const TRIGGER_COSINE: Record<ThumbTriggerPose, number> = {
+  // Neutral finger-gun: thumb extended outward, well below release.
+  open: -0.4,
+  // Between release and pull — keeps a latched trigger latched without firing new shots.
+  latched: 0.18,
+  // Comfortably above pull so rawState crosses on the first frame.
+  pulled: 0.6
 };
 
 const scalePoint = (origin: Point3D, point: Point3D, scale: number): Point3D => ({
@@ -37,26 +42,59 @@ const mirrorPoint = (point: Point3D): Point3D => ({
   x: 1 - point.x
 });
 
+// Build a thumbTip such that cos(∠ thumbTip - thumbIp , indexMcp - thumbIp)
+// equals the target value in the pixel-space metric used by
+// measureThumbCosine. Landmarks are normalized per axis, so we work in
+// pixel units (multiply by width/height) and convert back at the end.
+// Keeps the original thumb segment length so handScale-independent tests
+// stay meaningful.
 const createThumbTip = (
   landmarks: HandFrame["landmarks"],
-  triggerProjection: number
+  targetCosine: number,
+  frame: { width: number; height: number }
 ): Point3D => {
-  const { wrist, indexMcp, thumbIp } = landmarks;
-  const handScale = Math.hypot(indexMcp.x - wrist.x, indexMcp.y - wrist.y) || 1;
-  const axisX = indexMcp.x - thumbIp.x;
-  const axisY = indexMcp.y - thumbIp.y;
-  const axisLength = Math.hypot(axisX, axisY) || 1;
-  const travel = triggerProjection * handScale;
+  const { indexMcp, thumbIp, thumbTip: originalTip } = landmarks;
+  const w = frame.width;
+  const h = frame.height;
+  const segmentLength =
+    Math.hypot(
+      (originalTip.x - thumbIp.x) * w,
+      (originalTip.y - thumbIp.y) * h,
+      (originalTip.z - thumbIp.z) * w
+    ) || 1;
+  const axisX = (indexMcp.x - thumbIp.x) * w;
+  const axisY = (indexMcp.y - thumbIp.y) * h;
+  const axisZ = (indexMcp.z - thumbIp.z) * w;
+  const axisLength = Math.hypot(axisX, axisY, axisZ) || 1;
+  const ax = axisX / axisLength;
+  const ay = axisY / axisLength;
+  const az = axisZ / axisLength;
+  // Pick any unit vector perpendicular to the axis. Using the hand plane
+  // perpendicular (rotating the axis 90° in x/y) is deterministic and stable
+  // when az is near zero, which holds for the test base landmarks.
+  const perpRawX = -ay;
+  const perpRawY = ax;
+  const perpRawZ = 0;
+  const perpLength = Math.hypot(perpRawX, perpRawY, perpRawZ) || 1;
+  const px = perpRawX / perpLength;
+  const py = perpRawY / perpLength;
+  const pz = perpRawZ / perpLength;
+  const sinMagnitude = Math.sqrt(Math.max(0, 1 - targetCosine * targetCosine));
+  const dx = segmentLength * (targetCosine * ax + sinMagnitude * px);
+  const dy = segmentLength * (targetCosine * ay + sinMagnitude * py);
+  const dz = segmentLength * (targetCosine * az + sinMagnitude * pz);
 
   return {
-    x: thumbIp.x + (axisX / axisLength) * travel,
-    y: thumbIp.y + (axisY / axisLength) * travel,
-    z: thumbIp.z
+    x: thumbIp.x + dx / w,
+    y: thumbIp.y + dy / h,
+    z: thumbIp.z + dz / w
   };
 };
 
+const FRAME_SIZE = { width: BASE_WIDTH, height: BASE_HEIGHT };
+
 const createGeometryFrame = (
-  triggerProjection: number,
+  targetCosine: number,
   options: ThumbTriggerGeometryOptions = {}
 ): HandFrame => {
   const scale = options.scale ?? 1;
@@ -67,7 +105,7 @@ const createGeometryFrame = (
     ])
   ) as HandFrame["landmarks"];
 
-  const thumbTip = createThumbTip(landmarks, triggerProjection);
+  const thumbTip = createThumbTip(landmarks, targetCosine, FRAME_SIZE);
 
   return {
     width: BASE_WIDTH,
@@ -79,12 +117,12 @@ const createGeometryFrame = (
 export const createThumbTriggerFrame = (
   pose: ThumbTriggerPose,
   options: ThumbTriggerGeometryOptions = {}
-): HandFrame => createGeometryFrame(TRIGGER_PROJECTION[pose], options);
+): HandFrame => createGeometryFrame(TRIGGER_COSINE[pose], options);
 
-export const createThumbTriggerFrameFromProjection = (
-  triggerProjection: number,
+export const createThumbTriggerFrameFromCosine = (
+  targetCosine: number,
   options: ThumbTriggerGeometryOptions = {}
-): HandFrame => createGeometryFrame(triggerProjection, options);
+): HandFrame => createGeometryFrame(targetCosine, options);
 
 export const withThumbTriggerPose = (
   frame: HandFrame,
@@ -93,7 +131,10 @@ export const withThumbTriggerPose = (
   ...frame,
   landmarks: {
     ...frame.landmarks,
-    thumbTip: createThumbTip(frame.landmarks, TRIGGER_PROJECTION[pose])
+    thumbTip: createThumbTip(frame.landmarks, TRIGGER_COSINE[pose], {
+      width: frame.width,
+      height: frame.height
+    })
   }
 });
 

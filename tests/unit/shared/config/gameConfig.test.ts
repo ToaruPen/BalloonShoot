@@ -9,7 +9,7 @@ describe("gameConfig", () => {
     });
     expect(gameConfig.input).toEqual({
       smoothingAlpha: 0.28,
-      triggerPullThreshold: 0.18,
+      triggerPullThreshold: 0.3,
       triggerReleaseThreshold: 0.1,
       handFilterMinCutoff: 1.0,
       handFilterBeta: 0,

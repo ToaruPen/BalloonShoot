@@ -1,7 +1,8 @@
 const CAMERA_WIDTH = 640;
 const CAMERA_HEIGHT = 480;
 const INPUT_SMOOTHING_ALPHA = 0.28;
-const INPUT_TRIGGER_PULL_THRESHOLD = 0.18;
+// Trigger thresholds compare against measureThumbCosine: -1 fully open, +1 fully pulled.
+const INPUT_TRIGGER_PULL_THRESHOLD = 0.3;
 const INPUT_TRIGGER_RELEASE_THRESHOLD = 0.1;
 // 1€ filter defaults. Beta starts at 0 per https://gery.casiez.net/1euro/.
 const HAND_FILTER_MIN_CUTOFF_HZ = 1.0;

@@ -201,6 +201,7 @@ const flushPromises = async (): Promise<void> => {
 const createScriptedHandFrames = () => [
   withThumbTriggerPose(createThumbTriggerFrame("open"), "open"),
   withThumbTriggerPose(createThumbTriggerFrame("open"), "open"),
+  withThumbTriggerPose(createThumbTriggerFrame("open"), "open"),
   withThumbTriggerPose(createThumbTriggerFrame("pulled"), "pulled"),
   withThumbTriggerPose(createThumbTriggerFrame("pulled"), "pulled")
 ];
@@ -403,16 +404,11 @@ describe("startApp", () => {
     overlayRoot.click("start");
     await tickCountdown(3);
 
-    await runNextAnimationFrame();
-    await runNextAnimationFrame();
-    await runNextAnimationFrame();
-    await runNextAnimationFrame();
-    await runNextAnimationFrame();
-    await runNextAnimationFrame();
-    await runNextAnimationFrame();
-    await runNextAnimationFrame();
+    for (let index = 0; index < 9; index += 1) {
+      await runNextAnimationFrame();
+    }
 
-    expect(scriptedTracker.detect).toHaveBeenCalledTimes(4);
+    expect(scriptedTracker.detect).toHaveBeenCalledTimes(5);
     expect(scriptedFrames).toHaveLength(0);
   });
 
