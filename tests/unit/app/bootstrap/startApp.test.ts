@@ -523,7 +523,7 @@ describe("startApp", () => {
       }
     );
 
-    const crosshairTransitions = drawCalls.reduce<Array<"defined" | "undefined">>(
+    const crosshairTransitions = drawCalls.reduce<("defined" | "undefined")[]>(
       (transitions, state) => {
         const nextTransition = state.crosshair === undefined ? "undefined" : "defined";
 
