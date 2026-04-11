@@ -44,6 +44,8 @@ const stripHandEvidenceRuntime = (state: InputRuntimeState): InputRuntimeState =
     rawCurlState: _rawCurlState,
     lastExtendedCrosshair: _lastExtendedCrosshair,
     lockedCrosshair: _lockedCrosshair,
+    curlRatio: _curlRatio,
+    curlZDelta: _curlZDelta,
     ...rest
   } = state;
   return rest as InputRuntimeState;
@@ -135,6 +137,8 @@ export const mapHandToGameInput = (
     ...baseRuntime,
     rawCurlState:
       evidence.curl?.rawCurlState ?? intent.state.rawCurlState,
+    curlRatio: evidence.curl?.details.ratio ?? runtime?.curlRatio ?? 0,
+    curlZDelta: evidence.curl?.details.zDelta ?? runtime?.curlZDelta ?? 0,
     ...(nextLastExtendedCrosshair === undefined
       ? {}
       : { lastExtendedCrosshair: nextLastExtendedCrosshair }),

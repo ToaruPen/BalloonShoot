@@ -45,8 +45,9 @@ export const getCameraFeedStream = (): MediaStream | undefined => cameraFeedStre
 
 const createDefaultDebugValues = (): DebugValues => ({
   smoothingAlpha: gameConfig.input.smoothingAlpha,
-  triggerPullThreshold: gameConfig.input.triggerPullThreshold,
-  triggerReleaseThreshold: gameConfig.input.triggerReleaseThreshold
+  extendedThreshold: gameConfig.input.extendedThreshold,
+  curledThreshold: gameConfig.input.curledThreshold,
+  zAssistWeight: gameConfig.input.zAssistWeight
 });
 
 const toDebugTelemetry = (runtime: InputRuntimeState | undefined): DebugTelemetry | undefined =>
@@ -54,10 +55,14 @@ const toDebugTelemetry = (runtime: InputRuntimeState | undefined): DebugTelemetr
     ? {
         phase: runtime.phase,
         rejectReason: runtime.rejectReason,
-        triggerConfidence: runtime.triggerConfidence,
+        curlState: runtime.curlState,
+        rawCurlState: runtime.rawCurlState,
+        curlConfidence: runtime.curlConfidence,
         gunPoseConfidence: runtime.gunPoseConfidence,
-        openFrames: runtime.openFrames,
-        pulledFrames: runtime.pulledFrames,
+        ratio: runtime.curlRatio ?? 0,
+        zDelta: runtime.curlZDelta ?? 0,
+        extendedFrames: runtime.extendedFrames,
+        curledFrames: runtime.curledFrames,
         trackingPresentFrames: runtime.trackingPresentFrames,
         nonGunPoseFrames: runtime.nonGunPoseFrames
       }
@@ -237,8 +242,7 @@ export const startApp = (
       state.screen === "playing"
         ? inputRuntime?.phase === "tracking_lost"
           ? undefined
-          : trackedCrosshair ??
-            inputRuntime?.crosshair ?? {
+          : trackedCrosshair ?? {
               x: canvas.width / 2,
               y: canvas.height * CROSSHAIR_Y_RATIO
             }
@@ -292,7 +296,7 @@ export const startApp = (
           handFrame,
           { width: canvas.width, height: canvas.height },
           inputRuntime,
-          debugPanel.values
+          { ...gameConfig.input, ...debugPanel.values }
         );
 
         const previousTrackedCrosshair = trackedCrosshair;

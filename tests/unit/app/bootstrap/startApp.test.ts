@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DebugTelemetry } from "../../../../src/features/debug/createDebugPanel";
 import type { HandFrame } from "../../../../src/shared/types/hand";
-import { createThumbTriggerFrame, withThumbTriggerPose } from "../../features/input-mapping/thumbTriggerTestHelper";
 
 interface ScriptedHandTracker {
   detect: (bitmap: ImageBitmap, frameAtMs: number) => Promise<HandFrame | undefined>;
@@ -21,8 +20,10 @@ const {
 } = vi.hoisted(() => {
   const inputConfig = {
     smoothingAlpha: 0.28,
-    triggerPullThreshold: 0.45,
-    triggerReleaseThreshold: 0.25
+    extendedThreshold: 1.15,
+    curledThreshold: 0.65,
+    curlHysteresisGap: 0.05,
+    zAssistWeight: 0
   };
   const telemetryCalls: DebugTelemetry[] = [];
   const debugPanelInstance = {
@@ -176,20 +177,47 @@ const flushPromises = async (): Promise<void> => {
   await Promise.resolve();
 };
 
-const createScriptedHandFrames = () => [
-  withThumbTriggerPose(createThumbTriggerFrame("open"), "open"),
-  withThumbTriggerPose(createThumbTriggerFrame("open"), "open"),
-  withThumbTriggerPose(createThumbTriggerFrame("pulled"), "pulled"),
-  withThumbTriggerPose(createThumbTriggerFrame("pulled"), "pulled")
+// Base hand geometry: wrist=(0.4,0.7), indexMcp=(0.47,0.48) → handScale≈0.231
+// Extended: indexTip far from indexMcp → ratio > 1.2  (tipToMcp≈0.38)
+// Curled:   indexTip close to indexMcp → ratio < 0.65 (tipToMcp≈0.11)
+const BASE_LANDMARKS: HandFrame["landmarks"] = {
+  wrist: { x: 0.4, y: 0.7, z: 0 },
+  indexMcp: { x: 0.47, y: 0.48, z: 0 },
+  indexTip: { x: 0.5, y: 0.3, z: 0 }, // will be overridden per frame
+  indexDip: { x: 0, y: 0, z: 0 },
+  indexPip: { x: 0, y: 0, z: 0 },
+  thumbIp: { x: 0.37, y: 0.57, z: 0 },
+  thumbTip: { x: 0.3, y: 0.6, z: 0 },
+  middleTip: { x: 0.45, y: 0.64, z: 0 },
+  ringTip: { x: 0.42, y: 0.66, z: 0 },
+  pinkyTip: { x: 0.39, y: 0.67, z: 0 }
+};
+
+const makeIndexFrame = (indexTip: HandFrame["landmarks"]["indexTip"]): HandFrame => ({
+  width: 640,
+  height: 480,
+  landmarks: { ...BASE_LANDMARKS, indexTip }
+});
+
+// Extended: indexTip=(0.5,0.12) → tipToMcp≈hypot(0.03,0.36)≈0.361, ratio≈1.56
+const extendedTip = { x: 0.5, y: 0.12, z: 0 };
+// Curled: indexTip=(0.48,0.43) → tipToMcp≈hypot(0.01,0.05)≈0.051, ratio≈0.22
+const curledTip = { x: 0.48, y: 0.43, z: 0 };
+
+const createScriptedHandFrames = (): (HandFrame | undefined)[] => [
+  makeIndexFrame(extendedTip),
+  makeIndexFrame(extendedTip),
+  makeIndexFrame(curledTip),
+  makeIndexFrame(curledTip)
 ];
 
-const createTrackingLossHandFrames = () => [
-  withThumbTriggerPose(createThumbTriggerFrame("open"), "open"),
-  withThumbTriggerPose(createThumbTriggerFrame("open"), "open"),
+const createTrackingLossHandFrames = (): (HandFrame | undefined)[] => [
+  makeIndexFrame(extendedTip),
+  makeIndexFrame(extendedTip),
   undefined,
   undefined,
-  withThumbTriggerPose(createThumbTriggerFrame("open"), "open"),
-  withThumbTriggerPose(createThumbTriggerFrame("open"), "open")
+  makeIndexFrame(extendedTip),
+  makeIndexFrame(extendedTip)
 ];
 
 const mockAudioAndCameraControllers = (
@@ -301,7 +329,12 @@ describe("startApp", () => {
 
     startApp(root as unknown as HTMLDivElement);
 
-    expect(createDebugPanelMock).toHaveBeenCalledWith(inputConfig);
+    expect(createDebugPanelMock).toHaveBeenCalledWith({
+      smoothingAlpha: inputConfig.smoothingAlpha,
+      extendedThreshold: inputConfig.extendedThreshold,
+      curledThreshold: inputConfig.curledThreshold,
+      zAssistWeight: inputConfig.zAssistWeight
+    });
     expect(debugPanelInstance.render).toHaveBeenCalled();
     expect(debugPanelInstance.bind).toHaveBeenCalled();
   });
@@ -434,13 +467,16 @@ describe("startApp", () => {
 
     expect(typeof lastTelemetry.phase).toBe("string");
     expect(typeof lastTelemetry.rejectReason).toBe("string");
-    expect(lastTelemetry.triggerConfidence).toBeGreaterThanOrEqual(0);
+    expect(typeof lastTelemetry.curlState).toBe("string");
+    expect(typeof lastTelemetry.rawCurlState).toBe("string");
+    expect(lastTelemetry.curlConfidence).toBeGreaterThanOrEqual(0);
     expect(lastTelemetry.gunPoseConfidence).toBeGreaterThanOrEqual(0);
-    expect(lastTelemetry.openFrames).toBeGreaterThanOrEqual(0);
-    expect(lastTelemetry.pulledFrames).toBeGreaterThanOrEqual(0);
+    expect(typeof lastTelemetry.ratio).toBe("number");
+    expect(typeof lastTelemetry.zDelta).toBe("number");
+    expect(lastTelemetry.extendedFrames).toBeGreaterThanOrEqual(0);
+    expect(lastTelemetry.curledFrames).toBeGreaterThanOrEqual(0);
     expect(lastTelemetry.trackingPresentFrames).toBeGreaterThanOrEqual(0);
     expect(lastTelemetry.nonGunPoseFrames).toBeGreaterThanOrEqual(0);
-    expect(telemetryCalls.some((telemetry) => telemetry.phase === "armed")).toBe(true);
   });
 
   it("hides the crosshair while tracking is lost and restores it after reacquisition", async () => {

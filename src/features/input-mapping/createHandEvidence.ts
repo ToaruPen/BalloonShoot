@@ -18,6 +18,8 @@ export interface HandEvidenceRuntimeState {
   rawCurlState?: IndexCurlState | undefined;
   lastExtendedCrosshair?: CrosshairPoint | undefined;
   lockedCrosshair?: CrosshairPoint | undefined;
+  curlRatio?: number | undefined;
+  curlZDelta?: number | undefined;
 }
 
 export interface HandEvidenceTuning extends IndexCurlTuning {
