@@ -27,7 +27,7 @@ export interface DebugTelemetry {
   nonGunPoseFrames: number;
 }
 
-export interface DebugPanel {
+interface DebugPanel {
   readonly values: DebugValues;
   render(): string;
   bind(
