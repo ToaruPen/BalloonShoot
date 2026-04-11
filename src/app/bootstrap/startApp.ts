@@ -6,7 +6,13 @@ import {
   type DebugValues
 } from "../../features/debug/createDebugPanel";
 import { createGameEngine, registerShot } from "../../features/gameplay/domain/createGameEngine";
-import { createMediaPipeHandTracker } from "../../features/hand-tracking/createMediaPipeHandTracker";
+import {
+  createMediaPipeHandTracker,
+  type MediaPipeHandTrackerOptions,
+  type LandmarkTrace
+} from "../../features/hand-tracking/createMediaPipeHandTracker";
+import type { OneEuroFilterConfig } from "../../features/hand-tracking/oneEuroFilter";
+import { createLandmarkJitterTracker } from "../../features/hand-tracking/landmarkJitter";
 import {
   mapHandToGameInput,
   type InputRuntimeState
@@ -20,7 +26,9 @@ import { createInitialAppState, reduceAppEvent } from "../state/reduceAppEvent";
 const CROSSHAIR_Y_RATIO = 0.62;
 
 export interface StartAppDebugHooks {
-  createHandTracker?: () => Promise<HandTrackerLike>;
+  createHandTracker?: (
+    options: MediaPipeHandTrackerOptions
+  ) => Promise<HandTrackerLike>;
 }
 
 interface ImageCaptureLike {
@@ -46,10 +54,16 @@ export const getCameraFeedStream = (): MediaStream | undefined => cameraFeedStre
 const createDefaultDebugValues = (): DebugValues => ({
   smoothingAlpha: gameConfig.input.smoothingAlpha,
   triggerPullThreshold: gameConfig.input.triggerPullThreshold,
-  triggerReleaseThreshold: gameConfig.input.triggerReleaseThreshold
+  triggerReleaseThreshold: gameConfig.input.triggerReleaseThreshold,
+  handFilterMinCutoff: gameConfig.input.handFilterMinCutoff,
+  handFilterBeta: gameConfig.input.handFilterBeta
 });
 
-const toDebugTelemetry = (runtime: InputRuntimeState | undefined): DebugTelemetry | undefined =>
+const toDebugTelemetry = (
+  runtime: InputRuntimeState | undefined,
+  rawIndexJitter: number,
+  filterIndexJitter: number
+): DebugTelemetry | undefined =>
   runtime
     ? {
         phase: runtime.phase,
@@ -59,7 +73,9 @@ const toDebugTelemetry = (runtime: InputRuntimeState | undefined): DebugTelemetr
         openFrames: runtime.openFrames,
         pulledFrames: runtime.pulledFrames,
         trackingPresentFrames: runtime.trackingPresentFrames,
-        nonGunPoseFrames: runtime.nonGunPoseFrames
+        nonGunPoseFrames: runtime.nonGunPoseFrames,
+        rawIndexJitter,
+        filterIndexJitter
       }
     : undefined;
 
@@ -109,7 +125,8 @@ export const startApp = (
   let audio: AudioController | undefined;
   let camera: CameraController | undefined;
   let countdownTimerId: number | undefined;
-  const createHandTracker = debugHooks?.createHandTracker ?? createMediaPipeHandTracker;
+  const createHandTracker =
+    debugHooks?.createHandTracker ?? createMediaPipeHandTracker;
   let trackerPromise: ReturnType<typeof createHandTracker> | undefined;
   let gameFrameRequestId: number | undefined;
   let trackingFrameRequestId: number | undefined;
@@ -151,6 +168,23 @@ export const startApp = (
     debugRoot.querySelectorAll<HTMLInputElement>("[data-debug]"),
     debugRoot.querySelectorAll<HTMLElement>("[data-debug-output]")
   );
+
+  const rawJitterTracker = createLandmarkJitterTracker(30);
+  const filterJitterTracker = createLandmarkJitterTracker(30);
+
+  const getFilterConfig = (): OneEuroFilterConfig => ({
+    minCutoff: debugPanel.values.handFilterMinCutoff,
+    beta: debugPanel.values.handFilterBeta,
+    dCutoff: gameConfig.input.handFilterDCutoff
+  });
+
+  const handleLandmarkTrace = (trace: LandmarkTrace): void => {
+    rawJitterTracker.push(trace.rawIndexTip.x, trace.rawIndexTip.y);
+    filterJitterTracker.push(
+      trace.filteredIndexTip.x,
+      trace.filteredIndexTip.y
+    );
+  };
 
   const ctx = canvas.getContext("2d");
 
@@ -206,6 +240,8 @@ export const startApp = (
     trackerPromise = undefined;
     inputRuntime = undefined;
     trackedCrosshair = undefined;
+    rawJitterTracker.reset();
+    filterJitterTracker.reset();
     debugPanel.setTelemetry(undefined);
     engine = createGameEngine();
     state = createInitialAppState();
@@ -214,10 +250,13 @@ export const startApp = (
   };
 
   const getTrackerPromise = (): ReturnType<typeof createHandTracker> => {
-    trackerPromise ??= createHandTracker().catch((error: unknown) => {
-        trackerPromise = undefined;
-        throw error;
-      });
+    trackerPromise ??= createHandTracker({
+      getFilterConfig,
+      onLandmarkTrace: handleLandmarkTrace
+    }).catch((error: unknown) => {
+      trackerPromise = undefined;
+      throw error;
+    });
 
     return trackerPromise;
   };
@@ -299,7 +338,13 @@ export const startApp = (
 
         inputRuntime = input.runtime;
         trackedCrosshair = input.crosshair;
-        debugPanel.setTelemetry(toDebugTelemetry(input.runtime));
+        debugPanel.setTelemetry(
+          toDebugTelemetry(
+            input.runtime,
+            rawJitterTracker.peek(),
+            filterJitterTracker.peek()
+          )
+        );
 
         if (input.runtime.phase === "tracking_lost") {
           render();
@@ -413,16 +458,18 @@ export const startApp = (
         return;
       }
 
-    state = nextState;
-    stopGameLoop();
-    inputRuntime = undefined;
-    trackedCrosshair = undefined;
-    debugPanel.setTelemetry(undefined);
-    engine = createGameEngine();
-    void audio?.startBgm().catch(logAudioPlaybackFailure("BGM"));
-    startTrackerLoop();
-    startCountdown();
-    return;
+      state = nextState;
+      stopGameLoop();
+      inputRuntime = undefined;
+      trackedCrosshair = undefined;
+      rawJitterTracker.reset();
+      filterJitterTracker.reset();
+      debugPanel.setTelemetry(undefined);
+      engine = createGameEngine();
+      void audio?.startBgm().catch(logAudioPlaybackFailure("BGM"));
+      startTrackerLoop();
+      startCountdown();
+      return;
     }
 
     if (event.type === "RETRY_CLICKED") {
@@ -440,6 +487,8 @@ export const startApp = (
       publishCameraFeedStream(undefined);
       inputRuntime = undefined;
       trackedCrosshair = undefined;
+      rawJitterTracker.reset();
+      filterJitterTracker.reset();
       debugPanel.setTelemetry(undefined);
       engine = createGameEngine();
       state = nextState;

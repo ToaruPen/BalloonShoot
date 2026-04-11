@@ -1,10 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DebugTelemetry } from "../../../../src/features/debug/createDebugPanel";
+import type { MediaPipeHandTrackerOptions } from "../../../../src/features/hand-tracking/createMediaPipeHandTracker";
 import type { HandFrame } from "../../../../src/shared/types/hand";
-import { createThumbTriggerFrame, withThumbTriggerPose } from "../../features/input-mapping/thumbTriggerTestHelper";
+import {
+  createThumbTriggerFrame,
+  withThumbTriggerPose
+} from "../../features/input-mapping/thumbTriggerTestHelper";
 
 interface ScriptedHandTracker {
-  detect: (bitmap: ImageBitmap, frameAtMs: number) => Promise<HandFrame | undefined>;
+  detect: (
+    bitmap: ImageBitmap,
+    frameAtMs: number
+  ) => Promise<HandFrame | undefined>;
 }
 
 const {
@@ -22,7 +29,10 @@ const {
   const inputConfig = {
     smoothingAlpha: 0.28,
     triggerPullThreshold: 0.45,
-    triggerReleaseThreshold: 0.25
+    triggerReleaseThreshold: 0.25,
+    handFilterMinCutoff: 1.0,
+    handFilterBeta: 0,
+    handFilterDCutoff: 1.0
   };
   const telemetryCalls: DebugTelemetry[] = [];
   const debugPanelInstance = {
@@ -66,9 +76,12 @@ vi.mock("../../../../src/features/camera/createCameraController", () => ({
   createCameraController: createCameraControllerMock
 }));
 
-vi.mock("../../../../src/features/hand-tracking/createMediaPipeHandTracker", () => ({
-  createMediaPipeHandTracker: createMediaPipeHandTrackerMock
-}));
+vi.mock(
+  "../../../../src/features/hand-tracking/createMediaPipeHandTracker",
+  () => ({
+    createMediaPipeHandTracker: createMediaPipeHandTrackerMock
+  })
+);
 
 vi.mock("../../../../src/features/gameplay/domain/createGameEngine", () => ({
   createGameEngine: createGameEngineMock,
@@ -93,7 +106,11 @@ vi.mock("../../../../src/shared/config/gameConfig", () => ({
 vi.mock("../../../../src/app/screens/renderShell", () => ({
   renderShell: (state: { screen: string }) =>
     `<div data-screen="${state.screen}"><button data-action="${
-      state.screen === "permission" ? "camera" : state.screen === "ready" ? "start" : "retry"
+      state.screen === "permission"
+        ? "camera"
+        : state.screen === "ready"
+          ? "start"
+          : "retry"
     }"></button></div>`
 }));
 
@@ -112,7 +129,10 @@ class FakeOverlayRoot {
   innerHTML = "";
   private clickHandler: ((event: { target: unknown }) => void) | undefined;
 
-  addEventListener(type: string, handler: (event: { target: unknown }) => void): void {
+  addEventListener(
+    type: string,
+    handler: (event: { target: unknown }) => void
+  ): void {
     if (type === "click") {
       this.clickHandler = handler;
     }
@@ -124,7 +144,9 @@ class FakeOverlayRoot {
 
   click(action: string): void {
     if (!this.innerHTML.includes(`data-action="${action}"`)) {
-      throw new Error(`Action "${action}" is not rendered in the current screen`);
+      throw new Error(
+        `Action "${action}" is not rendered in the current screen`
+      );
     }
 
     const actionElement = new FakeElement({ action });
@@ -267,7 +289,9 @@ describe("startApp", () => {
   });
 
   const runNextAnimationFrame = async (timestamp = 0): Promise<void> => {
-    const callbackIndex = animationFrameCallbacks.findIndex((callback) => callback !== undefined);
+    const callbackIndex = animationFrameCallbacks.findIndex(
+      (callback) => callback !== undefined
+    );
 
     if (callbackIndex === -1) {
       throw new Error("Expected an animation frame callback to be queued");
@@ -301,21 +325,29 @@ describe("startApp", () => {
 
     startApp(root as unknown as HTMLDivElement);
 
-    expect(createDebugPanelMock).toHaveBeenCalledWith(inputConfig);
+    expect(createDebugPanelMock).toHaveBeenCalledWith({
+      smoothingAlpha: inputConfig.smoothingAlpha,
+      triggerPullThreshold: inputConfig.triggerPullThreshold,
+      triggerReleaseThreshold: inputConfig.triggerReleaseThreshold,
+      handFilterMinCutoff: inputConfig.handFilterMinCutoff,
+      handFilterBeta: inputConfig.handFilterBeta
+    });
     expect(debugPanelInstance.render).toHaveBeenCalled();
     expect(debugPanelInstance.bind).toHaveBeenCalled();
   });
 
   it("clears the prewarmed tracker promise when camera startup fails so the user can retry", async () => {
     const cameraStop = vi.fn();
-    mockAudioAndCameraControllers(() => Promise.reject(new Error("camera denied")), cameraStop);
+    mockAudioAndCameraControllers(
+      () => Promise.reject(new Error("camera denied")),
+      cameraStop
+    );
     createMediaPipeHandTrackerMock.mockResolvedValue({
       detect: vi.fn()
     });
 
-    const { getCameraFeedStream, startApp } = await import(
-      "../../../../src/app/bootstrap/startApp"
-    );
+    const { getCameraFeedStream, startApp } =
+      await import("../../../../src/app/bootstrap/startApp");
     const { root, overlayRoot } = createFakeRoot();
 
     startApp(root as unknown as HTMLDivElement);
@@ -344,12 +376,10 @@ describe("startApp", () => {
     };
 
     mockAudioAndCameraControllers(() =>
-      Promise.resolve(
-        {
-          getTracks: () => [],
-          getVideoTracks: () => [{ kind: "video" } as MediaStreamTrack]
-        } as unknown as MediaStream
-      )
+      Promise.resolve({
+        getTracks: () => [],
+        getVideoTracks: () => [{ kind: "video" } as MediaStreamTrack]
+      } as unknown as MediaStream)
     );
 
     createHandTracker.mockResolvedValue(scriptedTracker);
@@ -357,11 +387,13 @@ describe("startApp", () => {
     const { startApp } = await import("../../../../src/app/bootstrap/startApp");
     const { root, overlayRoot } = createFakeRoot();
 
-    (startApp as unknown as (
-      root: HTMLDivElement,
-      debugValues: unknown,
-      debugHooks: { createHandTracker: typeof createHandTracker }
-    ) => void)(root as unknown as HTMLDivElement, undefined, { createHandTracker });
+    (
+      startApp as unknown as (
+        root: HTMLDivElement,
+        debugValues: unknown,
+        debugHooks: { createHandTracker: typeof createHandTracker }
+      ) => void
+    )(root as unknown as HTMLDivElement, undefined, { createHandTracker });
 
     overlayRoot.click("camera");
     await flushPromises();
@@ -396,12 +428,10 @@ describe("startApp", () => {
     };
 
     mockAudioAndCameraControllers(() =>
-      Promise.resolve(
-        {
-          getTracks: () => [],
-          getVideoTracks: () => [{ kind: "video" } as MediaStreamTrack]
-        } as unknown as MediaStream
-      )
+      Promise.resolve({
+        getTracks: () => [],
+        getVideoTracks: () => [{ kind: "video" } as MediaStreamTrack]
+      } as unknown as MediaStream)
     );
 
     createHandTracker.mockResolvedValue(scriptedTracker);
@@ -409,11 +439,13 @@ describe("startApp", () => {
     const { startApp } = await import("../../../../src/app/bootstrap/startApp");
     const { root, overlayRoot } = createFakeRoot();
 
-    (startApp as unknown as (
-      root: HTMLDivElement,
-      debugValues: unknown,
-      debugHooks: { createHandTracker: typeof createHandTracker }
-    ) => void)(root as unknown as HTMLDivElement, undefined, { createHandTracker });
+    (
+      startApp as unknown as (
+        root: HTMLDivElement,
+        debugValues: unknown,
+        debugHooks: { createHandTracker: typeof createHandTracker }
+      ) => void
+    )(root as unknown as HTMLDivElement, undefined, { createHandTracker });
 
     overlayRoot.click("camera");
     await flushPromises();
@@ -440,7 +472,9 @@ describe("startApp", () => {
     expect(lastTelemetry.pulledFrames).toBeGreaterThanOrEqual(0);
     expect(lastTelemetry.trackingPresentFrames).toBeGreaterThanOrEqual(0);
     expect(lastTelemetry.nonGunPoseFrames).toBeGreaterThanOrEqual(0);
-    expect(telemetryCalls.some((telemetry) => telemetry.phase === "armed")).toBe(true);
+    expect(
+      telemetryCalls.some((telemetry) => telemetry.phase === "armed")
+    ).toBe(true);
   });
 
   it("hides the crosshair while tracking is lost and restores it after reacquisition", async () => {
@@ -477,11 +511,13 @@ describe("startApp", () => {
     const { startApp } = await import("../../../../src/app/bootstrap/startApp");
     const { root, overlayRoot } = createFakeRoot();
 
-    (startApp as unknown as (
-      root: HTMLDivElement,
-      debugValues: unknown,
-      debugHooks: { createHandTracker: typeof createHandTracker }
-    ) => void)(root as unknown as HTMLDivElement, undefined, { createHandTracker });
+    (
+      startApp as unknown as (
+        root: HTMLDivElement,
+        debugValues: unknown,
+        debugHooks: { createHandTracker: typeof createHandTracker }
+      ) => void
+    )(root as unknown as HTMLDivElement, undefined, { createHandTracker });
 
     overlayRoot.click("camera");
     await flushPromises();
@@ -499,15 +535,19 @@ describe("startApp", () => {
       await runNextAnimationFrame();
     }
 
-    const drawCalls = drawGameFrameMock.mock.calls.slice(drawCallsBeforePlaying).map(([, state]) =>
-      state as {
-        crosshair?: { x: number; y: number };
-      }
-    );
+    const drawCalls = drawGameFrameMock.mock.calls
+      .slice(drawCallsBeforePlaying)
+      .map(
+        ([, state]) =>
+          state as {
+            crosshair?: { x: number; y: number };
+          }
+      );
 
     const crosshairTransitions = drawCalls.reduce<("defined" | "undefined")[]>(
       (transitions, state) => {
-        const nextTransition = state.crosshair === undefined ? "undefined" : "defined";
+        const nextTransition =
+          state.crosshair === undefined ? "undefined" : "defined";
 
         if (transitions.at(-1) !== nextTransition) {
           transitions.push(nextTransition);
@@ -545,9 +585,74 @@ describe("startApp", () => {
     overlayRoot.click("camera");
     await flushPromises();
 
-    // Tracker prewarm failure is logged but non-fatal — state should reach ready,
+    // Tracker prewarm failure is logged but non-fatal: state should reach ready,
     // not get reset back to permission.
     expect(cameraStop).not.toHaveBeenCalled();
     expect(overlayRoot.innerHTML).toContain('data-screen="ready"');
+  });
+
+  it("passes a live 1euro config closure and jitter trace sink to the tracker", async () => {
+    mockAudioAndCameraControllers(() =>
+      Promise.resolve({
+        getTracks: () => [],
+        getVideoTracks: () => [{ kind: "video" } as MediaStreamTrack]
+      } as unknown as MediaStream)
+    );
+
+    const scriptedFrames = createScriptedHandFrames();
+    const scriptedTracker: ScriptedHandTracker = {
+      detect: vi.fn(() => Promise.resolve(scriptedFrames.shift()))
+    };
+    let capturedOptions: MediaPipeHandTrackerOptions | undefined;
+    createMediaPipeHandTrackerMock.mockImplementation((options: MediaPipeHandTrackerOptions) => {
+      capturedOptions = options;
+      return Promise.resolve(scriptedTracker);
+    });
+
+    const { startApp } = await import("../../../../src/app/bootstrap/startApp");
+    const { root, overlayRoot } = createFakeRoot();
+
+    startApp(root as unknown as HTMLDivElement);
+    overlayRoot.click("camera");
+    await flushPromises();
+
+    expect(createMediaPipeHandTrackerMock).toHaveBeenCalledTimes(1);
+    expect(typeof capturedOptions?.getFilterConfig).toBe("function");
+    expect(typeof capturedOptions?.onLandmarkTrace).toBe("function");
+
+    debugPanelInstance.values.handFilterMinCutoff = 3.0;
+    debugPanelInstance.values.handFilterBeta = 0.04;
+
+    expect(capturedOptions?.getFilterConfig()).toEqual({
+      minCutoff: 3.0,
+      beta: 0.04,
+      dCutoff: 1.0
+    });
+
+    overlayRoot.click("start");
+    await tickCountdown(3);
+
+    // Feed a raw-vs-filtered step change through the sink so the jitter
+    // trackers register a non-zero spread.
+    capturedOptions?.onLandmarkTrace({
+      frameAtMs: 0,
+      rawIndexTip: { x: 0.1, y: 0.2, z: 0 },
+      filteredIndexTip: { x: 0.1, y: 0.2, z: 0 }
+    });
+    capturedOptions?.onLandmarkTrace({
+      frameAtMs: 33,
+      rawIndexTip: { x: 0.5, y: 0.2, z: 0 },
+      filteredIndexTip: { x: 0.15, y: 0.2, z: 0 }
+    });
+
+    // Drive one tracking frame through the real processTrackingFrame loop so
+    // setTelemetry is called with the computed jitter values.
+    await runNextAnimationFrame(16);
+    await runNextAnimationFrame(33);
+
+    const lastTelemetry = telemetryCalls.at(-1);
+    expect(lastTelemetry?.rawIndexJitter).toBeGreaterThan(
+      lastTelemetry?.filterIndexJitter ?? Number.POSITIVE_INFINITY
+    );
   });
 });
