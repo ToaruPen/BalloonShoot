@@ -1,84 +1,100 @@
 import { gameConfig } from "../../shared/config/gameConfig";
 import type { HandFrame } from "../../shared/types/hand";
-import type { CrosshairPoint } from "./createCrosshairSmoother";
-import { buildHandEvidence, type HandEvidenceTuning } from "./createHandEvidence";
+import {
+  smoothCrosshair,
+  type CrosshairPoint
+} from "./createCrosshairSmoother";
+import {
+  buildHandEvidence,
+  type HandEvidence,
+  type HandEvidenceRuntimeState,
+  type HandEvidenceTuning
+} from "./createHandEvidence";
+import type { IndexCurlState, IndexCurlTuning } from "./evaluateIndexCurl";
 import {
   advanceShotIntentState,
+  type ShotIntentResult,
   type ShotIntentState
 } from "./shotIntentStateMachine";
 import type { ViewportSize } from "./projectLandmarkToViewport";
-import { type TriggerState, type TriggerTuning } from "./evaluateThumbTrigger";
 
-export interface InputRuntimeState extends ShotIntentState {
-  crosshair?: CrosshairPoint | undefined;
-}
+type InputHandEvidenceRuntimeState = Omit<HandEvidenceRuntimeState, "rawCurlState"> & {
+  rawCurlState: IndexCurlState;
+};
+
+export interface InputRuntimeState extends ShotIntentState, InputHandEvidenceRuntimeState {}
 
 export interface GameInputFrame {
   crosshair?: CrosshairPoint;
   gunPoseActive: boolean;
-  triggerState: TriggerState;
+  curlState: IndexCurlState;
   shotFired: boolean;
+  crosshairLockAction: ShotIntentResult["crosshairLockAction"];
   runtime: InputRuntimeState;
 }
 
-export interface InputTuning extends TriggerTuning {
+export interface InputTuning extends IndexCurlTuning {
   smoothingAlpha: number;
 }
 
 export { buildHandEvidence } from "./createHandEvidence";
 
-const resolveHandEvidence = (
-  frame: HandFrame | undefined,
-  viewportSize: ViewportSize,
-  runtime: InputRuntimeState | undefined,
-  tuning: InputTuning
-): ReturnType<typeof buildHandEvidence> =>
-  buildHandEvidence(
-    frame,
-    viewportSize,
-    {
-      crosshair: runtime?.crosshair,
-      rawTriggerState: runtime?.rawTriggerState
-    },
-    undefined,
-    tuning as HandEvidenceTuning
-  );
-
-const inferShotIntent = (
-  runtime: InputRuntimeState | undefined,
-  evidence: ReturnType<typeof buildHandEvidence>
-): ReturnType<typeof advanceShotIntentState> => advanceShotIntentState(runtime, evidence);
-
-const dropRuntimeCrosshair = (
-  state: InputRuntimeState
-): Omit<InputRuntimeState, "crosshair"> => {
-  const { crosshair: _previousCrosshair, ...runtimeState } = state;
-
-  return runtimeState;
+const stripHandEvidenceRuntime = (state: InputRuntimeState): InputRuntimeState => {
+  const {
+    rawCurlState: _rawCurlState,
+    lastExtendedCrosshair: _lastExtendedCrosshair,
+    lockedCrosshair: _lockedCrosshair,
+    ...rest
+  } = state;
+  return rest as InputRuntimeState;
 };
 
-const adaptGameInputFrame = (
-  evidence: ReturnType<typeof buildHandEvidence>,
-  intent: ReturnType<typeof advanceShotIntentState>
-): GameInputFrame => {
-  const crosshair =
-    intent.state.phase === "tracking_lost"
-      ? undefined
-      : evidence.smoothedCrosshairCandidate ?? { x: 0, y: 0 };
+const computeNextLastExtendedCrosshair = (
+  evidence: HandEvidence,
+  runtime: InputRuntimeState | undefined,
+  alpha: number
+): CrosshairPoint | undefined => {
+  if (!evidence.projectedCrosshairCandidate) {
+    return runtime?.lastExtendedCrosshair;
+  }
+  if (evidence.curl?.rawCurlState !== "extended") {
+    return runtime?.lastExtendedCrosshair;
+  }
+  return smoothCrosshair(runtime?.lastExtendedCrosshair, evidence.projectedCrosshairCandidate, alpha);
+};
 
-  return {
-    gunPoseActive: intent.state.gunPoseActive,
-    triggerState: intent.state.triggerState,
-    shotFired: intent.shotFired,
-    ...(crosshair === undefined ? {} : { crosshair }),
-    // `advanceShotIntentState` preserves prior runtime fields, so drop any stale crosshair
-    // before attaching the current one.
-    runtime: {
-      ...dropRuntimeCrosshair(intent.state as InputRuntimeState),
-      rejectReason: intent.state.rejectReason,
-      ...(crosshair === undefined ? {} : { crosshair })
-    }
-  };
+const computeNextLockedCrosshair = (
+  intent: ShotIntentResult,
+  nextLastExtendedCrosshair: CrosshairPoint | undefined,
+  previousLockedCrosshair: CrosshairPoint | undefined
+): CrosshairPoint | undefined => {
+  switch (intent.crosshairLockAction) {
+    case "freeze":
+      // D4.3 physical guard: only freeze when we have something to freeze.
+      return nextLastExtendedCrosshair ?? previousLockedCrosshair;
+    case "release":
+      return undefined;
+    case "none":
+    default:
+      return previousLockedCrosshair;
+  }
+};
+
+const resolveFinalCrosshair = (
+  intent: ShotIntentResult,
+  nextLockedCrosshair: CrosshairPoint | undefined,
+  nextLastExtendedCrosshair: CrosshairPoint | undefined,
+  evidence: HandEvidence
+): CrosshairPoint | undefined => {
+  if (intent.state.phase === "tracking_lost") {
+    return undefined;
+  }
+  return (
+    nextLockedCrosshair ??
+    nextLastExtendedCrosshair ??
+    evidence.projectedCrosshairCandidate ??
+    { x: 0, y: 0 }
+  );
 };
 
 export const mapHandToGameInput = (
@@ -87,8 +103,60 @@ export const mapHandToGameInput = (
   runtime: InputRuntimeState | undefined,
   tuning: InputTuning = gameConfig.input
 ): GameInputFrame => {
-  const evidence = resolveHandEvidence(frame, viewportSize, runtime, tuning);
-  const intent = inferShotIntent(runtime, evidence);
+  // (a) Build raw evidence (curl measurement, gun-pose, projected crosshair candidate).
+  const evidence = buildHandEvidence(
+    frame,
+    viewportSize,
+    runtime,
+    undefined,
+    tuning as HandEvidenceTuning
+  );
 
-  return adaptGameInputFrame(evidence, intent);
+  // (b) Conditionally update lastExtendedCrosshair (only when raw curl is extended).
+  const nextLastExtendedCrosshair = computeNextLastExtendedCrosshair(
+    evidence,
+    runtime,
+    tuning.smoothingAlpha
+  );
+
+  // (c) Drive the state machine.
+  const intent = advanceShotIntentState(runtime, evidence);
+
+  // (d) Apply the crosshair lock action with the undefined-data physical guard.
+  const nextLockedCrosshair = computeNextLockedCrosshair(
+    intent,
+    nextLastExtendedCrosshair,
+    runtime?.lockedCrosshair
+  );
+
+  // (e) Build the next runtime state.
+  const baseRuntime = stripHandEvidenceRuntime(intent.state as InputRuntimeState);
+  const nextRuntime: InputRuntimeState = {
+    ...baseRuntime,
+    rawCurlState:
+      evidence.curl?.rawCurlState ?? runtime?.rawCurlState ?? intent.state.rawCurlState,
+    ...(nextLastExtendedCrosshair === undefined
+      ? {}
+      : { lastExtendedCrosshair: nextLastExtendedCrosshair }),
+    ...(nextLockedCrosshair === undefined
+      ? {}
+      : { lockedCrosshair: nextLockedCrosshair })
+  };
+
+  // (f) Resolve the final crosshair the game will see.
+  const finalCrosshair = resolveFinalCrosshair(
+    intent,
+    nextLockedCrosshair,
+    nextLastExtendedCrosshair,
+    evidence
+  );
+
+  return {
+    gunPoseActive: intent.state.gunPoseActive,
+    curlState: intent.state.curlState,
+    shotFired: intent.shotFired,
+    crosshairLockAction: intent.crosshairLockAction,
+    ...(finalCrosshair === undefined ? {} : { crosshair: finalCrosshair }),
+    runtime: nextRuntime
+  };
 };
