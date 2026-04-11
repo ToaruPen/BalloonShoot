@@ -11,10 +11,30 @@ export interface DebugInputElement {
   addEventListener(type: "input", listener: () => void): void;
 }
 
+export interface DebugOutputElement {
+  dataset: { debugOutput?: string };
+  textContent: string | null;
+}
+
+export interface DebugTelemetry {
+  phase: string;
+  rejectReason: string;
+  triggerConfidence: number;
+  gunPoseConfidence: number;
+  openFrames: number;
+  pulledFrames: number;
+  trackingPresentFrames: number;
+  nonGunPoseFrames: number;
+}
+
 export interface DebugPanel {
   readonly values: DebugValues;
   render(): string;
-  bind(inputs: Iterable<DebugInputElement>): void;
+  bind(
+    inputs: Iterable<DebugInputElement>,
+    outputs?: Iterable<DebugOutputElement>
+  ): void;
+  setTelemetry(telemetry: DebugTelemetry | undefined): void;
 }
 
 interface DebugControlMeta {
@@ -23,6 +43,8 @@ interface DebugControlMeta {
   max: number;
   step: number;
 }
+
+type DebugOutputKey = "phase" | "rejectReason" | "trigger" | "gunPose" | "counters";
 
 const HYSTERESIS_GAP = 0.01;
 
@@ -39,6 +61,16 @@ const DEBUG_META: Record<keyof DebugValues, DebugControlMeta> = {
   triggerPullThreshold: { label: "Pull", min: 0.05, max: 0.4, step: 0.01 },
   triggerReleaseThreshold: { label: "Release", min: 0.02, max: 0.25, step: 0.01 }
 };
+
+const DEBUG_OUTPUT_META: Record<DebugOutputKey, string> = {
+  phase: "Phase",
+  rejectReason: "Reject",
+  trigger: "Trigger",
+  gunPose: "Pose",
+  counters: "Counts"
+};
+
+const DEBUG_OUTPUT_KEYS = Object.keys(DEBUG_OUTPUT_META) as DebugOutputKey[];
 
 const isDebugKey = (key: string | undefined): key is keyof DebugValues =>
   key !== undefined && DEBUG_KEY_SET.has(key);
@@ -59,6 +91,34 @@ const countDecimals = (value: number): number => {
 
 const formatForInput = (key: keyof DebugValues, value: number): string =>
   String(Number(value.toFixed(countDecimals(DEBUG_META[key].step))));
+
+const formatConfidence = (value: number | undefined): string =>
+  Number.isFinite(value) ? Number(value).toFixed(2) : "--";
+
+const formatTelemetryOutput = (
+  key: DebugOutputKey,
+  telemetry: DebugTelemetry | undefined
+): string => {
+  if (!telemetry) {
+    return key === "counters" ? "open=0 pull=0 track=0 pose=0" : "--";
+  }
+
+  switch (key) {
+    case "phase":
+      return telemetry.phase;
+    case "rejectReason":
+      return telemetry.rejectReason;
+    case "trigger":
+      return formatConfidence(telemetry.triggerConfidence);
+    case "gunPose":
+      return formatConfidence(telemetry.gunPoseConfidence);
+    case "counters":
+      return `open=${String(telemetry.openFrames)} pull=${String(telemetry.pulledFrames)} track=${String(telemetry.trackingPresentFrames)} pose=${String(telemetry.nonGunPoseFrames)}`;
+  }
+};
+
+const isDebugOutputKey = (key: string | undefined): key is DebugOutputKey =>
+  key !== undefined && DEBUG_OUTPUT_KEYS.includes(key as DebugOutputKey);
 
 const normalizeTriggerThresholds = (
   triggerPullThreshold: number,
@@ -85,6 +145,8 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
     )
   };
   const boundInputs: Partial<Record<keyof DebugValues, DebugInputElement>> = {};
+  const boundOutputs: Partial<Record<DebugOutputKey, DebugOutputElement>> = {};
+  let telemetry: DebugTelemetry | undefined;
 
   const renderRow = (key: keyof DebugValues): string => {
     const meta = DEBUG_META[key];
@@ -93,7 +155,11 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
 
   const render = (): string => {
     const rows = DEBUG_KEYS.map(renderRow).join("");
-    return `<aside class="debug-panel" aria-label="debug controls">${rows}</aside>`;
+    const telemetryRows = DEBUG_OUTPUT_KEYS.map(
+      (key) =>
+        `<div class="debug-panel-row"><span>${DEBUG_OUTPUT_META[key]}</span><output data-debug-output="${key}">${formatTelemetryOutput(key, telemetry)}</output></div>`
+    ).join("");
+    return `<aside class="debug-panel" aria-label="debug controls">${rows}${telemetryRows}</aside>`;
   };
 
   const syncInputValue = (key: keyof DebugValues): void => {
@@ -117,7 +183,28 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
     syncInputValue("triggerReleaseThreshold");
   };
 
-  const bind = (inputs: Iterable<DebugInputElement>): void => {
+  const syncTelemetryOutput = (key: DebugOutputKey): void => {
+    const output = boundOutputs[key];
+
+    if (!output) {
+      return;
+    }
+
+    output.textContent = formatTelemetryOutput(key, telemetry);
+  };
+
+  const setTelemetry = (nextTelemetry: DebugTelemetry | undefined): void => {
+    telemetry = nextTelemetry;
+
+    for (const key of DEBUG_OUTPUT_KEYS) {
+      syncTelemetryOutput(key);
+    }
+  };
+
+  const bind = (
+    inputs: Iterable<DebugInputElement>,
+    outputs: Iterable<DebugOutputElement> = []
+  ): void => {
     for (const input of inputs) {
       const boundKey = input.dataset.debug;
 
@@ -146,7 +233,18 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
         }
       });
     }
+
+    for (const output of outputs) {
+      const key = output.dataset.debugOutput;
+
+      if (!isDebugOutputKey(key)) {
+        continue;
+      }
+
+      boundOutputs[key] = output;
+      syncTelemetryOutput(key);
+    }
   };
 
-  return { values, render, bind };
+  return { values, render, bind, setTelemetry };
 };

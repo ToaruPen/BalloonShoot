@@ -3,6 +3,16 @@ import { gameConfig } from "../../shared/config/gameConfig";
 
 export type TriggerState = "open" | "pulled";
 
+export interface ThumbTriggerMeasurement {
+  rawState: TriggerState;
+  confidence: number;
+  details: {
+    projection: number;
+    pullThreshold: number;
+    releaseThreshold: number;
+  };
+}
+
 export interface TriggerTuning {
   triggerPullThreshold: number;
   triggerReleaseThreshold: number;
@@ -40,17 +50,47 @@ const normalizeTriggerTuning = (tuning: TriggerTuning): TriggerTuning => {
   };
 };
 
+const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
+
+export const measureThumbTrigger = (
+  frame: HandFrame,
+  previousState: TriggerState | undefined,
+  tuning: TriggerTuning = gameConfig.input
+): ThumbTriggerMeasurement => {
+  const thumbPull = measureThumbPull(frame);
+  const safeTuning = normalizeTriggerTuning(tuning);
+  const rawState =
+    previousState === "pulled"
+      ? thumbPull > safeTuning.triggerReleaseThreshold
+        ? "pulled"
+        : "open"
+      : thumbPull > safeTuning.triggerPullThreshold
+        ? "pulled"
+        : "open";
+  const confidenceRange = Math.max(
+    safeTuning.triggerPullThreshold - safeTuning.triggerReleaseThreshold,
+    Number.EPSILON
+  );
+  const confidence =
+    rawState === "pulled"
+      ? clamp01((thumbPull - safeTuning.triggerReleaseThreshold) / confidenceRange)
+      : clamp01((safeTuning.triggerPullThreshold - thumbPull) / confidenceRange);
+
+  return {
+    rawState,
+    confidence,
+    details: {
+      projection: thumbPull,
+      pullThreshold: safeTuning.triggerPullThreshold,
+      releaseThreshold: safeTuning.triggerReleaseThreshold
+    }
+  };
+};
+
 export const evaluateThumbTrigger = (
   frame: HandFrame,
   previousState: TriggerState | undefined,
   tuning: TriggerTuning = gameConfig.input
 ): TriggerState => {
-  const thumbPull = measureThumbPull(frame);
-  const safeTuning = normalizeTriggerTuning(tuning);
-
-  if (previousState === "pulled") {
-    return thumbPull > safeTuning.triggerReleaseThreshold ? "pulled" : "open";
-  }
-
-  return thumbPull > safeTuning.triggerPullThreshold ? "pulled" : "open";
+  return measureThumbTrigger(frame, previousState, tuning).rawState;
 };
