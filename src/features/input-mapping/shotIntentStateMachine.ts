@@ -1,5 +1,5 @@
 import type { HandEvidence } from "./createHandEvidence";
-import type { TriggerState } from "./evaluateThumbTrigger";
+import type { IndexCurlState } from "./evaluateIndexCurl";
 
 export type ShotIntentPhase =
   | "idle"
@@ -10,22 +10,24 @@ export type ShotIntentPhase =
   | "recovering";
 
 export type ShotIntentRejectReason =
-  | "waiting_for_stable_open"
+  | "waiting_for_stable_extended"
   | "waiting_for_fire_entry"
-  | "waiting_for_stable_pulled"
+  | "waiting_for_stable_curled"
   | "waiting_for_release"
   | "tracking_lost";
+
+export type CrosshairLockAction = "none" | "freeze" | "release";
 
 export interface ShotIntentState {
   phase: ShotIntentPhase;
   rejectReason: ShotIntentRejectReason;
-  triggerState: TriggerState;
-  rawTriggerState: TriggerState;
-  triggerConfidence: number;
+  curlState: IndexCurlState;
+  rawCurlState: IndexCurlState;
+  curlConfidence: number;
   gunPoseConfidence: number;
-  pulledFrames: number;
-  openFrames: number;
-  hasSeenStableOpen: boolean;
+  curledFrames: number;
+  extendedFrames: number;
+  hasSeenStableExtended: boolean;
   gunPoseActive: boolean;
   nonGunPoseFrames: number;
   trackingPresentFrames: number;
@@ -34,6 +36,7 @@ export interface ShotIntentState {
 export interface ShotIntentResult {
   state: ShotIntentState;
   shotFired: boolean;
+  crosshairLockAction: CrosshairLockAction;
 }
 
 const FIRE_ENTRY_GUN_POSE_CONFIDENCE = 0.55;
@@ -45,14 +48,14 @@ const TRACKING_RECOVERY_FRAMES = 2;
 
 const createInitialShotIntentState = (): ShotIntentState => ({
   phase: "idle",
-  rejectReason: "waiting_for_stable_open",
-  triggerState: "open",
-  rawTriggerState: "open",
-  triggerConfidence: 0,
+  rejectReason: "waiting_for_stable_extended",
+  curlState: "partial",
+  rawCurlState: "partial",
+  curlConfidence: 0,
   gunPoseConfidence: 0,
-  pulledFrames: 0,
-  openFrames: 0,
-  hasSeenStableOpen: false,
+  curledFrames: 0,
+  extendedFrames: 0,
+  hasSeenStableExtended: false,
   gunPoseActive: false,
   nonGunPoseFrames: 0,
   trackingPresentFrames: 0
@@ -99,53 +102,55 @@ const resolveGunPoseActive = (
   };
 };
 
-const resolveTriggerState = (
+const resolveCurlState = (
   evidence: HandEvidence,
   previousState: ShotIntentState
 ): Pick<
   ShotIntentState,
-  "triggerState" | "rawTriggerState" | "triggerConfidence" | "pulledFrames" | "openFrames"
+  "curlState" | "rawCurlState" | "curlConfidence" | "curledFrames" | "extendedFrames"
 > => {
-  const rawTriggerState = evidence.trigger?.rawState ?? previousState.rawTriggerState;
-  const triggerConfidence = evidence.trigger?.confidence ?? 0;
-  const pulledFrames = rawTriggerState === "pulled" ? previousState.pulledFrames + 1 : 0;
-  const openFrames = rawTriggerState === "open" ? previousState.openFrames + 1 : 0;
+  const rawCurlState = evidence.curl?.rawCurlState ?? previousState.rawCurlState;
+  const curlConfidence = evidence.curl?.confidence ?? 0;
+  const curledFrames = rawCurlState === "curled" ? previousState.curledFrames + 1 : 0;
+  const extendedFrames = rawCurlState === "extended" ? previousState.extendedFrames + 1 : 0;
 
-  let triggerState = previousState.triggerState;
+  let curlState = previousState.curlState;
 
-  if (
-    previousState.triggerState === "open" &&
-    rawTriggerState === "pulled" &&
-    pulledFrames >= TRIGGER_CONFIRMATION_FRAMES
-  ) {
-    triggerState = "pulled";
+  if (previousState.curlState === "extended" && rawCurlState === "partial") {
+    curlState = "partial";
   } else if (
-    previousState.triggerState === "pulled" &&
-    rawTriggerState === "open" &&
-    openFrames >= TRIGGER_RELEASE_FRAMES
+    previousState.curlState === "partial" &&
+    rawCurlState === "curled" &&
+    curledFrames >= TRIGGER_CONFIRMATION_FRAMES
   ) {
-    triggerState = "open";
+    curlState = "curled";
+  } else if (
+    previousState.curlState !== "extended" &&
+    rawCurlState === "extended" &&
+    extendedFrames >= TRIGGER_RELEASE_FRAMES
+  ) {
+    curlState = "extended";
   }
 
   return {
-    triggerState,
-    rawTriggerState,
-    triggerConfidence,
-    pulledFrames,
-    openFrames
+    curlState,
+    rawCurlState,
+    curlConfidence,
+    curledFrames,
+    extendedFrames
   };
 };
 
 const resolveRejectReason = (phase: ShotIntentPhase): ShotIntentRejectReason => {
   switch (phase) {
     case "idle":
-      return "waiting_for_stable_open";
+      return "waiting_for_stable_extended";
     case "tracking_lost":
       return "tracking_lost";
     case "ready":
       return "waiting_for_fire_entry";
     case "armed":
-      return "waiting_for_stable_pulled";
+      return "waiting_for_stable_curled";
     case "fired":
       return "waiting_for_release";
     case "recovering":
@@ -157,13 +162,13 @@ const withTrackingLossReset = (state: ShotIntentState): ShotIntentState => ({
   ...state,
   phase: "tracking_lost",
   rejectReason: "tracking_lost",
-  triggerState: "open",
-  rawTriggerState: "open",
-  triggerConfidence: 0,
+  curlState: "partial",
+  rawCurlState: "partial",
+  curlConfidence: 0,
   gunPoseConfidence: 0,
-  pulledFrames: 0,
-  openFrames: 0,
-  hasSeenStableOpen: false,
+  curledFrames: 0,
+  extendedFrames: 0,
+  hasSeenStableExtended: false,
   gunPoseActive: false,
   nonGunPoseFrames: 0,
   trackingPresentFrames: 0
@@ -173,31 +178,31 @@ const withPoseLossReset = (
   state: ShotIntentState,
   trackingPresentFrames: number,
   nonGunPoseFrames: number,
-  triggerConfidence: number,
+  curlConfidence: number,
   gunPoseConfidence: number
 ): ShotIntentState => ({
   ...state,
   phase: "idle",
   rejectReason: resolveRejectReason("idle"),
-  triggerState: "open",
-  rawTriggerState: "open",
-  triggerConfidence,
+  curlState: "partial",
+  rawCurlState: "partial",
+  curlConfidence,
   gunPoseConfidence,
-  pulledFrames: 0,
-  openFrames: 0,
-  hasSeenStableOpen: false,
+  curledFrames: 0,
+  extendedFrames: 0,
+  hasSeenStableExtended: false,
   gunPoseActive: false,
   nonGunPoseFrames,
   trackingPresentFrames
 });
 
-type TriggerStateResolution = ReturnType<typeof resolveTriggerState>;
+type CurlStateResolution = ReturnType<typeof resolveCurlState>;
 type GunPoseResolution = ReturnType<typeof resolveGunPoseActive>;
 
 const resolveTrackingLostState = (
   stateBefore: ShotIntentState,
   trackingPresentFrames: number,
-  triggerState: TriggerStateResolution,
+  curl: CurlStateResolution,
   gunPose: GunPoseResolution
 ): ShotIntentResult => {
   if (trackingPresentFrames < TRACKING_RECOVERY_FRAMES) {
@@ -206,17 +211,18 @@ const resolveTrackingLostState = (
         ...stateBefore,
         phase: "tracking_lost",
         rejectReason: "tracking_lost",
-        triggerState: triggerState.triggerState,
-        rawTriggerState: triggerState.rawTriggerState,
-        triggerConfidence: triggerState.triggerConfidence,
+        curlState: curl.curlState,
+        rawCurlState: curl.rawCurlState,
+        curlConfidence: curl.curlConfidence,
         gunPoseConfidence: gunPose.gunPoseConfidence,
-        pulledFrames: triggerState.pulledFrames,
-        openFrames: triggerState.openFrames,
+        curledFrames: curl.curledFrames,
+        extendedFrames: curl.extendedFrames,
         gunPoseActive: gunPose.gunPoseActive,
         nonGunPoseFrames: gunPose.nonGunPoseFrames,
         trackingPresentFrames
       },
-      shotFired: false
+      shotFired: false,
+      crosshairLockAction: "release"
     };
   }
 
@@ -225,39 +231,40 @@ const resolveTrackingLostState = (
       ...stateBefore,
       phase: "idle",
       rejectReason: resolveRejectReason("idle"),
-      triggerState: triggerState.triggerState,
-      rawTriggerState: triggerState.rawTriggerState,
-      triggerConfidence: triggerState.triggerConfidence,
+      curlState: curl.curlState,
+      rawCurlState: curl.rawCurlState,
+      curlConfidence: curl.curlConfidence,
       gunPoseConfidence: gunPose.gunPoseConfidence,
-      pulledFrames: triggerState.pulledFrames,
-      openFrames: triggerState.openFrames,
-      hasSeenStableOpen: false,
+      curledFrames: curl.curledFrames,
+      extendedFrames: curl.extendedFrames,
+      hasSeenStableExtended: false,
       gunPoseActive: gunPose.gunPoseActive,
       nonGunPoseFrames: gunPose.nonGunPoseFrames,
       trackingPresentFrames
     },
-    shotFired: false
+    shotFired: false,
+    crosshairLockAction: "none"
   };
 };
 
 const buildTrackedState = (
   stateBefore: ShotIntentState,
   phase: ShotIntentPhase,
-  triggerState: TriggerStateResolution,
+  curl: CurlStateResolution,
   gunPose: GunPoseResolution,
   trackingPresentFrames: number
 ): ShotIntentState => ({
   ...stateBefore,
   phase,
   rejectReason: resolveRejectReason(phase),
-  triggerState: triggerState.triggerState,
-  rawTriggerState: triggerState.rawTriggerState,
-  triggerConfidence: triggerState.triggerConfidence,
+  curlState: curl.curlState,
+  rawCurlState: curl.rawCurlState,
+  curlConfidence: curl.curlConfidence,
   gunPoseConfidence: gunPose.gunPoseConfidence,
-  pulledFrames: triggerState.pulledFrames,
-  openFrames: triggerState.openFrames,
-  hasSeenStableOpen:
-    phase === "ready" || phase === "armed" || phase === "recovering" || stateBefore.hasSeenStableOpen,
+  curledFrames: curl.curledFrames,
+  extendedFrames: curl.extendedFrames,
+  hasSeenStableExtended:
+    phase === "ready" || phase === "armed" || phase === "recovering" || stateBefore.hasSeenStableExtended,
   gunPoseActive: gunPose.gunPoseActive,
   nonGunPoseFrames: gunPose.nonGunPoseFrames,
   trackingPresentFrames
@@ -266,115 +273,117 @@ const buildTrackedState = (
 const advanceIdlePhase = (
   stateBefore: ShotIntentState,
   trackingPresentFrames: number,
-  triggerState: TriggerStateResolution,
+  curl: CurlStateResolution,
   gunPose: GunPoseResolution,
   gunPoseFireReady: boolean
 ): ShotIntentResult => {
   const trackingAndPoseReady =
     trackingPresentFrames >= TRACKING_RECOVERY_FRAMES && gunPose.gunPoseActive && gunPoseFireReady;
-  const stableOpen = triggerState.triggerState === "open" && triggerState.openFrames >= 2;
-  const phase: ShotIntentPhase = trackingAndPoseReady && stableOpen ? "ready" : "idle";
-  const nextState = buildTrackedState(stateBefore, phase, triggerState, gunPose, trackingPresentFrames);
+  const stableExtended = curl.curlState === "extended" && curl.extendedFrames >= TRIGGER_RELEASE_FRAMES;
+  const phase: ShotIntentPhase = trackingAndPoseReady && stableExtended ? "ready" : "idle";
+  const nextState = buildTrackedState(stateBefore, phase, curl, gunPose, trackingPresentFrames);
 
   if (phase === "idle") {
-    nextState.hasSeenStableOpen = stateBefore.hasSeenStableOpen || (trackingAndPoseReady && stableOpen);
+    nextState.hasSeenStableExtended = stateBefore.hasSeenStableExtended || (trackingAndPoseReady && stableExtended);
   }
 
   return {
     state: nextState,
-    shotFired: false
+    shotFired: false,
+    crosshairLockAction: "none"
   };
 };
 
 const advanceReadyPhase = (
   stateBefore: ShotIntentState,
   trackingPresentFrames: number,
-  triggerState: TriggerStateResolution,
+  curl: CurlStateResolution,
   gunPose: GunPoseResolution,
   gunPoseFireReady: boolean
 ): ShotIntentResult => {
   const trackingAndPoseReady =
     trackingPresentFrames >= TRACKING_RECOVERY_FRAMES && gunPose.gunPoseActive && gunPoseFireReady;
-  const stableOpen = triggerState.triggerState === "open" && triggerState.openFrames >= 2;
-  const phase: ShotIntentPhase = trackingAndPoseReady && stableOpen ? "armed" : "ready";
+  const stableExtended = curl.curlState === "extended" && curl.extendedFrames >= TRIGGER_RELEASE_FRAMES;
+  const phase: ShotIntentPhase = trackingAndPoseReady && stableExtended ? "armed" : "ready";
 
   return {
-    state: buildTrackedState(stateBefore, phase, triggerState, gunPose, trackingPresentFrames),
-    shotFired: false
+    state: buildTrackedState(stateBefore, phase, curl, gunPose, trackingPresentFrames),
+    shotFired: false,
+    crosshairLockAction: "none"
   };
 };
 
 const advanceArmedPhase = (
   stateBefore: ShotIntentState,
   trackingPresentFrames: number,
-  triggerState: TriggerStateResolution,
+  curl: CurlStateResolution,
   gunPose: GunPoseResolution,
   gunPoseFireReady: boolean
 ): ShotIntentResult => {
   const trackingAndPoseReady =
     trackingPresentFrames >= TRACKING_RECOVERY_FRAMES && gunPose.gunPoseActive && gunPoseFireReady;
-  const stablePulled = triggerState.triggerState === "pulled" && triggerState.pulledFrames >= 2;
-  const shotFired = trackingAndPoseReady && stablePulled;
+  const stableCurled = curl.curlState === "curled" && curl.curledFrames >= TRIGGER_CONFIRMATION_FRAMES;
+  const shotFired = trackingAndPoseReady && stableCurled;
   const phase: ShotIntentPhase = shotFired ? "fired" : "armed";
+  const enteringPartial = stateBefore.curlState === "extended" && curl.rawCurlState === "partial";
+  const crosshairLockAction: CrosshairLockAction = enteringPartial ? "freeze" : "none";
 
   return {
-    state: buildTrackedState(stateBefore, phase, triggerState, gunPose, trackingPresentFrames),
-    shotFired
+    state: buildTrackedState(stateBefore, phase, curl, gunPose, trackingPresentFrames),
+    shotFired,
+    crosshairLockAction
   };
 };
 
 const advanceFiredPhase = (
   stateBefore: ShotIntentState,
   trackingPresentFrames: number,
-  triggerState: TriggerStateResolution,
+  curl: CurlStateResolution,
   gunPose: GunPoseResolution
 ): ShotIntentResult => ({
-  state: buildTrackedState(stateBefore, "recovering", triggerState, gunPose, trackingPresentFrames),
-  shotFired: false
+  state: buildTrackedState(stateBefore, "recovering", curl, gunPose, trackingPresentFrames),
+  shotFired: false,
+  crosshairLockAction: "none"
 });
 
 const advanceRecoveringPhase = (
   stateBefore: ShotIntentState,
   trackingPresentFrames: number,
-  triggerState: TriggerStateResolution,
+  curl: CurlStateResolution,
   gunPose: GunPoseResolution,
   gunPoseFireReady: boolean
 ): ShotIntentResult => {
   const trackingAndPoseReady =
     trackingPresentFrames >= TRACKING_RECOVERY_FRAMES && gunPose.gunPoseActive && gunPoseFireReady;
-  const stableOpen = triggerState.triggerState === "open" && triggerState.openFrames >= 2;
-  const phase: ShotIntentPhase = trackingAndPoseReady && stableOpen ? "ready" : "recovering";
+  const stableExtended = curl.curlState === "extended" && curl.extendedFrames >= TRIGGER_RELEASE_FRAMES;
+  const phase: ShotIntentPhase = trackingAndPoseReady && stableExtended ? "ready" : "recovering";
+  const crosshairLockAction: CrosshairLockAction = phase === "ready" ? "release" : "none";
 
   return {
-    state: buildTrackedState(stateBefore, phase, triggerState, gunPose, trackingPresentFrames),
-    shotFired: false
+    state: buildTrackedState(stateBefore, phase, curl, gunPose, trackingPresentFrames),
+    shotFired: false,
+    crosshairLockAction
   };
 };
 
 const advanceTrackedPhase = (
   stateBefore: ShotIntentState,
   trackingPresentFrames: number,
-  triggerState: TriggerStateResolution,
+  curl: CurlStateResolution,
   gunPose: GunPoseResolution,
   gunPoseFireReady: boolean
 ): ShotIntentResult => {
   switch (stateBefore.phase) {
     case "idle":
-      return advanceIdlePhase(stateBefore, trackingPresentFrames, triggerState, gunPose, gunPoseFireReady);
+      return advanceIdlePhase(stateBefore, trackingPresentFrames, curl, gunPose, gunPoseFireReady);
     case "ready":
-      return advanceReadyPhase(stateBefore, trackingPresentFrames, triggerState, gunPose, gunPoseFireReady);
+      return advanceReadyPhase(stateBefore, trackingPresentFrames, curl, gunPose, gunPoseFireReady);
     case "armed":
-      return advanceArmedPhase(stateBefore, trackingPresentFrames, triggerState, gunPose, gunPoseFireReady);
+      return advanceArmedPhase(stateBefore, trackingPresentFrames, curl, gunPose, gunPoseFireReady);
     case "fired":
-      return advanceFiredPhase(stateBefore, trackingPresentFrames, triggerState, gunPose);
+      return advanceFiredPhase(stateBefore, trackingPresentFrames, curl, gunPose);
     case "recovering":
-      return advanceRecoveringPhase(
-        stateBefore,
-        trackingPresentFrames,
-        triggerState,
-        gunPose,
-        gunPoseFireReady
-      );
+      return advanceRecoveringPhase(stateBefore, trackingPresentFrames, curl, gunPose, gunPoseFireReady);
   }
 
   throw new Error(`Unhandled shot intent phase: ${stateBefore.phase}`);
@@ -389,12 +398,13 @@ export const advanceShotIntentState = (
   if (!evidence.trackingPresent) {
     return {
       state: withTrackingLossReset(stateBefore),
-      shotFired: false
+      shotFired: false,
+      crosshairLockAction: "release"
     };
   }
 
   const trackingPresentFrames = stateBefore.trackingPresentFrames + 1;
-  const triggerState = resolveTriggerState(evidence, stateBefore);
+  const curl = resolveCurlState(evidence, stateBefore);
   const gunPose = resolveGunPoseActive(evidence, stateBefore);
   const gunPoseFireReady = (evidence.gunPose?.confidence ?? 0) >= FIRE_ENTRY_GUN_POSE_CONFIDENCE;
   const poseLost = !gunPose.gunPoseActive && gunPose.nonGunPoseFrames > GUN_POSE_GRACE_FRAMES;
@@ -405,16 +415,17 @@ export const advanceShotIntentState = (
         stateBefore,
         trackingPresentFrames,
         gunPose.nonGunPoseFrames,
-        triggerState.triggerConfidence,
+        curl.curlConfidence,
         gunPose.gunPoseConfidence
       ),
-      shotFired: false
+      shotFired: false,
+      crosshairLockAction: "release"
     };
   }
 
   if (stateBefore.phase === "tracking_lost") {
-    return resolveTrackingLostState(stateBefore, trackingPresentFrames, triggerState, gunPose);
+    return resolveTrackingLostState(stateBefore, trackingPresentFrames, curl, gunPose);
   }
 
-  return advanceTrackedPhase(stateBefore, trackingPresentFrames, triggerState, gunPose, gunPoseFireReady);
+  return advanceTrackedPhase(stateBefore, trackingPresentFrames, curl, gunPose, gunPoseFireReady);
 };

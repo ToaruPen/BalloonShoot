@@ -8,6 +8,7 @@ import {
   measureGunPose,
   type GunPoseMeasurement
 } from "./evaluateGunPose";
+import type { IndexCurlMeasurement } from "./evaluateIndexCurl";
 import {
   measureThumbTrigger,
   type ThumbTriggerMeasurement,
@@ -29,7 +30,9 @@ export interface HandEvidenceTuning extends TriggerTuning {
 export interface HandEvidence {
   trackingPresent: boolean;
   frameAtMs: number | undefined;
+  projectedCrosshairCandidate: CrosshairPoint | null;
   smoothedCrosshairCandidate: CrosshairPoint | null;
+  curl: IndexCurlMeasurement | null;
   trigger: ThumbTriggerMeasurement | null;
   gunPose: GunPoseMeasurement | null;
 }
@@ -45,7 +48,9 @@ export const buildHandEvidence = (
     return {
       trackingPresent: false,
       frameAtMs,
+      projectedCrosshairCandidate: null,
       smoothedCrosshairCandidate: null,
+      curl: null,
       trigger: null,
       gunPose: null
     };
@@ -68,7 +73,9 @@ export const buildHandEvidence = (
   return {
     trackingPresent: true,
     frameAtMs,
+    projectedCrosshairCandidate: projectedCrosshair,
     smoothedCrosshairCandidate,
+    curl: null,
     trigger,
     gunPose
   };

@@ -5,31 +5,34 @@ import {
   type ShotIntentState
 } from "../../../../src/features/input-mapping/shotIntentStateMachine";
 import type { HandEvidence } from "../../../../src/features/input-mapping/createHandEvidence";
-import type { TriggerState } from "../../../../src/features/input-mapping/evaluateThumbTrigger";
+import type { IndexCurlState } from "../../../../src/features/input-mapping/evaluateIndexCurl";
 
 const FIRE_ENTRY_GUN_POSE_CONFIDENCE = 0.55;
-const FIRE_EXIT_GUN_POSE_CONFIDENCE = 0.45;
+
+interface EvidenceOptions {
+  trackingPresent?: boolean;
+  rawCurlState?: IndexCurlState;
+  gunPoseConfidence?: number;
+}
 
 const createEvidence = ({
   trackingPresent = true,
-  triggerState = "open",
+  rawCurlState = "extended",
   gunPoseConfidence = FIRE_ENTRY_GUN_POSE_CONFIDENCE
-}: {
-  trackingPresent?: boolean;
-  triggerState?: TriggerState;
-  gunPoseConfidence?: number;
-} = {}): HandEvidence => ({
+}: EvidenceOptions = {}): HandEvidence => ({
   trackingPresent,
   frameAtMs: undefined,
-  smoothedCrosshairCandidate: null,
-  trigger: trackingPresent
+  projectedCrosshairCandidate: trackingPresent ? { x: 0.5, y: 0.5 } : null,
+  curl: trackingPresent
     ? {
-        rawState: triggerState,
+        rawCurlState,
         confidence: 1,
         details: {
-          projection: 0.25,
-          pullThreshold: 0.18,
-          releaseThreshold: 0.1
+          ratio: rawCurlState === "extended" ? 1.4 : rawCurlState === "curled" ? 0.5 : 0.9,
+          zDelta: 0,
+          extendedThreshold: 1.15,
+          curledThreshold: 0.65,
+          curlHysteresisGap: 0.05
         }
       }
     : null,
@@ -38,15 +41,15 @@ const createEvidence = ({
         detected: gunPoseConfidence >= FIRE_ENTRY_GUN_POSE_CONFIDENCE,
         confidence: gunPoseConfidence,
         details: {
-          indexExtended: true,
-          curledFingerCount: 2,
-          curledThreshold: 0.25
+          indexExtended: false,
+          curledFingerCount: 3,
+          curledThreshold: 0.05
         }
       }
     : null
 });
 
-const runSequence = (steps: Parameters<typeof createEvidence>[0][]): ShotIntentResult[] => {
+const runSequence = (steps: EvidenceOptions[]): ShotIntentResult[] => {
   const results: ShotIntentResult[] = [];
   let state: ShotIntentState | undefined;
 
@@ -59,136 +62,128 @@ const runSequence = (steps: Parameters<typeof createEvidence>[0][]): ShotIntentR
   return results;
 };
 
-describe("ShotIntentStateMachine", () => {
-  it("promotes idle to ready and ready to armed after three stable open frames", () => {
+describe("ShotIntentStateMachine (curl)", () => {
+  it("promotes idle -> ready -> armed after stable extended frames", () => {
     const [first, second, third] = runSequence([
-      { triggerState: "open" },
-      { triggerState: "open" },
-      { triggerState: "open" }
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" }
     ]);
-
     expect(first?.state.phase).toBe("idle");
-    expect(first?.state.rejectReason).toBe("waiting_for_stable_open");
-    expect(first?.shotFired).toBe(false);
-
     expect(second?.state.phase).toBe("ready");
-    expect(second?.state.rejectReason).toBe("waiting_for_fire_entry");
-    expect(second?.shotFired).toBe(false);
-
     expect(third?.state.phase).toBe("armed");
-    expect(third?.state.rejectReason).toBe("waiting_for_stable_pulled");
-    expect(third?.shotFired).toBe(false);
+    expect(third?.crosshairLockAction).toBe("none");
   });
 
-  it("does not fire on a cold-start open-open-pulled-pulled sequence", () => {
+  it("does not fire while extended is held", () => {
+    const results = runSequence(Array.from({ length: 10 }, () => ({ rawCurlState: "extended" })));
+    expect(results.every((r) => !r.shotFired)).toBe(true);
+  });
+
+  it("emits a freeze action on the first armed frame that observes partial", () => {
     const results = runSequence([
-      { triggerState: "open" },
-      { triggerState: "open" },
-      { triggerState: "pulled" },
-      { triggerState: "pulled" }
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" }, // armed
+      { rawCurlState: "partial" } // expect freeze
     ]);
-
-    expect(results.map((result) => result.state.phase)).toEqual(["idle", "ready", "ready", "ready"]);
-    expect(results.some((result) => result.shotFired)).toBe(false);
+    const lockActions = results.map((r) => r.crosshairLockAction);
+    expect(lockActions[0]).toBe("none");
+    expect(lockActions[3]).toBe("freeze");
   });
 
-  it("emits shotFired exactly once on armed to fired and returns to ready after recovering", () => {
-    const [first, second, third, fourth, fifth, sixth, seventh] = runSequence([
-      { triggerState: "open" },
-      { triggerState: "open" },
-      { triggerState: "open" },
-      { triggerState: "pulled" },
-      { triggerState: "pulled" },
-      { triggerState: "open" },
-      { triggerState: "open" }
+  it("does not fire on a single curled frame", () => {
+    const results = runSequence([
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" }, // armed
+      { rawCurlState: "partial" },
+      { rawCurlState: "curled" }, // 1 curled frame
+      { rawCurlState: "partial" } // backed off
     ]);
-
-    expect(first?.state.phase).toBe("idle");
-    expect(second?.state.phase).toBe("ready");
-    expect(third?.state.phase).toBe("armed");
-    expect(fourth?.state.phase).toBe("armed");
-    expect(fifth?.state.phase).toBe("fired");
-    expect(fifth?.shotFired).toBe(true);
-    expect(sixth?.state.phase).toBe("recovering");
-    expect(sixth?.shotFired).toBe(false);
-    expect(seventh?.state.phase).toBe("ready");
-    expect(seventh?.shotFired).toBe(false);
-
-    expect(runSequence([
-      { triggerState: "open" },
-      { triggerState: "open" },
-      { triggerState: "open" },
-      { triggerState: "pulled" },
-      { triggerState: "pulled" },
-      { triggerState: "pulled" },
-      { triggerState: "pulled" }
-    ]).filter((result) => result.shotFired)).toHaveLength(1);
+    expect(results.some((r) => r.shotFired)).toBe(false);
   });
 
-  it("enters tracking_lost immediately and does not re-arm until two tracking-present frames arrive", () => {
-    const [first, second, third, fourth, fifth, sixth, seventh] = runSequence([
-      { triggerState: "open" },
-      { triggerState: "open" },
-      { trackingPresent: false },
-      { triggerState: "open" },
-      { triggerState: "open" },
-      { triggerState: "pulled" },
-      { triggerState: "pulled" }
+  it("fires after two consecutive curled frames", () => {
+    const results = runSequence([
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" }, // armed
+      { rawCurlState: "partial" },
+      { rawCurlState: "curled" },
+      { rawCurlState: "curled" } // fire
     ]);
-
-    expect(first?.state.phase).toBe("idle");
-    expect(second?.state.phase).toBe("ready");
-    expect(third?.state.phase).toBe("tracking_lost");
-    expect(third?.state.rejectReason).toBe("tracking_lost");
-    expect(third?.shotFired).toBe(false);
-    expect(fourth?.state.phase).toBe("tracking_lost");
-    expect(fifth?.state.phase).toBe("idle");
-    expect(sixth?.state.phase).toBe("idle");
-    expect(seventh?.state.phase).toBe("idle");
-    expect(runSequence([
-      { triggerState: "open" },
-      { triggerState: "open" },
-      { trackingPresent: false },
-      { triggerState: "open" },
-      { triggerState: "open" },
-      { triggerState: "pulled" },
-      { triggerState: "pulled" }
-    ]).some((result) => result.shotFired)).toBe(false);
+    expect(results[5]?.shotFired).toBe(true);
+    expect(results[5]?.state.phase).toBe("fired");
   });
 
-  it("keeps reject reasons separate from phases", () => {
-    const idleResult = advanceShotIntentState(undefined, createEvidence({ triggerState: "open" }));
-    const lostResult = advanceShotIntentState(idleResult.state, createEvidence({ trackingPresent: false }));
-
-    expect(idleResult.state.phase).toBe("idle");
-    expect(idleResult.state.rejectReason).toBe("waiting_for_stable_open");
-    expect(idleResult.state.rejectReason).not.toBe(idleResult.state.phase);
-
-    expect(lostResult.state.phase).toBe("tracking_lost");
-    expect(lostResult.state.rejectReason).toBe("tracking_lost");
-    expect(lostResult.state.rejectReason).not.toBe("idle");
+  it("does not fire while only partial is sustained", () => {
+    const results = runSequence([
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" }, // armed
+      ...Array.from({ length: 30 }, () => ({ rawCurlState: "partial" as const }))
+    ]);
+    expect(results.some((r) => r.shotFired)).toBe(false);
   });
 
-  it("keeps pose visible but blocks fire until confidence recovers above the entry threshold", () => {
-    const [first, second, third, fourth, fifth, sixth] = runSequence([
-      { triggerState: "open", gunPoseConfidence: FIRE_ENTRY_GUN_POSE_CONFIDENCE },
-      { triggerState: "open", gunPoseConfidence: FIRE_ENTRY_GUN_POSE_CONFIDENCE },
-      { triggerState: "open", gunPoseConfidence: FIRE_ENTRY_GUN_POSE_CONFIDENCE },
-      { triggerState: "pulled", gunPoseConfidence: FIRE_ENTRY_GUN_POSE_CONFIDENCE },
-      { triggerState: "pulled", gunPoseConfidence: FIRE_EXIT_GUN_POSE_CONFIDENCE },
-      { triggerState: "pulled", gunPoseConfidence: FIRE_ENTRY_GUN_POSE_CONFIDENCE }
+  it("blocks re-fire until extended is confirmed for two frames, then emits release", () => {
+    const results = runSequence([
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" }, // armed
+      { rawCurlState: "partial" },
+      { rawCurlState: "curled" },
+      { rawCurlState: "curled" }, // fired
+      { rawCurlState: "extended" }, // recovering, 1 frame extended
+      { rawCurlState: "extended" } // ready, lockAction = release
     ]);
+    const releaseActions = results.map((r) => r.crosshairLockAction);
+    expect(results[5]?.shotFired).toBe(true);
+    expect(results[6]?.state.phase).toBe("recovering");
+    expect(results[7]?.state.phase).toBe("ready");
+    expect(releaseActions[7]).toBe("release");
+  });
 
-    expect(first?.state.phase).toBe("idle");
-    expect(second?.state.phase).toBe("ready");
-    expect(third?.state.phase).toBe("armed");
-    expect(fourth?.state.phase).toBe("armed");
-    expect(fourth?.shotFired).toBe(false);
-    expect(fifth?.state.phase).not.toBe("tracking_lost");
-    expect(fifth?.state.phase).toBe("armed");
-    expect(fifth?.state.gunPoseActive).toBe(true);
-    expect(fifth?.shotFired).toBe(false);
-    expect(sixth?.state.phase).toBe("fired");
-    expect(sixth?.shotFired).toBe(true);
+  it("does not arm on a cold start that begins in partial or curled", () => {
+    const partialFirst = runSequence([
+      { rawCurlState: "partial" },
+      { rawCurlState: "partial" },
+      { rawCurlState: "partial" }
+    ]);
+    expect(partialFirst.every((r) => r.state.phase !== "armed")).toBe(true);
+    expect(partialFirst.every((r) => r.crosshairLockAction !== "freeze")).toBe(true);
+
+    const curledFirst = runSequence([
+      { rawCurlState: "curled" },
+      { rawCurlState: "curled" },
+      { rawCurlState: "curled" }
+    ]);
+    expect(curledFirst.every((r) => r.state.phase !== "armed")).toBe(true);
+    expect(curledFirst.every((r) => r.crosshairLockAction !== "freeze")).toBe(true);
+  });
+
+  it("emits release when tracking is lost", () => {
+    const results = runSequence([
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" }, // armed
+      { trackingPresent: false }
+    ]);
+    expect(results[3]?.crosshairLockAction).toBe("release");
+    expect(results[3]?.state.phase).toBe("tracking_lost");
+  });
+
+  it("emits release when gun-pose is lost (after grace frames)", () => {
+    const results = runSequence([
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" }, // armed
+      { gunPoseConfidence: 0 },
+      { gunPoseConfidence: 0 },
+      { gunPoseConfidence: 0 }
+    ]);
+    const releaseEmitted = results.some((r) => r.crosshairLockAction === "release");
+    expect(releaseEmitted).toBe(true);
   });
 });
