@@ -1,8 +1,10 @@
-const CAMERA_WIDTH = 640;
-const CAMERA_HEIGHT = 480;
-const INPUT_SMOOTHING_ALPHA = 0.28;
-const INPUT_TRIGGER_PULL_THRESHOLD = 0.18;
-const INPUT_TRIGGER_RELEASE_THRESHOLD = 0.1;
+export const CAMERA_WIDTH = 640;
+export const CAMERA_HEIGHT = 480;
+export const INPUT_SMOOTHING_ALPHA = 0.28;
+export const INPUT_EXTENDED_THRESHOLD = 1.15;
+export const INPUT_CURLED_THRESHOLD = 0.65;
+export const INPUT_CURL_HYSTERESIS_GAP = 0.05;
+export const INPUT_Z_ASSIST_WEIGHT = 0;
 
 export const gameConfig = {
   camera: {
@@ -11,7 +13,9 @@ export const gameConfig = {
   },
   input: {
     smoothingAlpha: INPUT_SMOOTHING_ALPHA,
-    triggerPullThreshold: INPUT_TRIGGER_PULL_THRESHOLD,
-    triggerReleaseThreshold: INPUT_TRIGGER_RELEASE_THRESHOLD
+    extendedThreshold: INPUT_EXTENDED_THRESHOLD,
+    curledThreshold: INPUT_CURLED_THRESHOLD,
+    curlHysteresisGap: INPUT_CURL_HYSTERESIS_GAP,
+    zAssistWeight: INPUT_Z_ASSIST_WEIGHT
   }
 } as const;
