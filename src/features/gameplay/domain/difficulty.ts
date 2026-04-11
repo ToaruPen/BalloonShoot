@@ -1,4 +1,4 @@
-export interface DifficultyProfile {
+interface DifficultyProfile {
   spawnEveryMs: number;
   normalRadius: number;
   smallRadius: number;
