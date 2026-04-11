@@ -4,7 +4,7 @@ export interface OneEuroFilterConfig {
   dCutoff: number;
 }
 
-export interface OneEuroFilter {
+interface OneEuroFilter {
   filter(value: number, timestampMs: number): number;
   reset(): void;
 }
@@ -16,14 +16,20 @@ const smoothingFactor = (timeElapsedSec: number, cutoffHz: number): number => {
 
 export const createOneEuroFilter = (
   getConfig: () => OneEuroFilterConfig
-): OneEuroFilter => {
-  let prevValue: number | undefined;
+) => {
+  let prevRawValue: number | undefined;
+  let prevFilteredValue: number | undefined;
   let prevDerivative = 0;
   let prevTimestampMs: number | undefined;
 
   const filter = (value: number, timestampMs: number): number => {
-    if (prevValue === undefined || prevTimestampMs === undefined) {
-      prevValue = value;
+    if (
+      prevRawValue === undefined ||
+      prevFilteredValue === undefined ||
+      prevTimestampMs === undefined
+    ) {
+      prevRawValue = value;
+      prevFilteredValue = value;
       prevDerivative = 0;
       prevTimestampMs = timestampMs;
       return value;
@@ -32,15 +38,16 @@ export const createOneEuroFilter = (
     const dtSec = (timestampMs - prevTimestampMs) / 1000;
     const { minCutoff, beta, dCutoff } = getConfig();
 
-    const rawDerivative = (value - prevValue) / dtSec;
+    const rawDerivative = (value - prevRawValue) / dtSec;
     const aD = smoothingFactor(dtSec, dCutoff);
     const dxFiltered = aD * rawDerivative + (1 - aD) * prevDerivative;
 
     const cutoff = minCutoff + beta * Math.abs(dxFiltered);
     const a = smoothingFactor(dtSec, cutoff);
-    const filteredValue = a * value + (1 - a) * prevValue;
+    const filteredValue = a * value + (1 - a) * prevFilteredValue;
 
-    prevValue = filteredValue;
+    prevRawValue = value;
+    prevFilteredValue = filteredValue;
     prevDerivative = dxFiltered;
     prevTimestampMs = timestampMs;
 
@@ -48,10 +55,11 @@ export const createOneEuroFilter = (
   };
 
   const reset = (): void => {
-    prevValue = undefined;
+    prevRawValue = undefined;
+    prevFilteredValue = undefined;
     prevDerivative = 0;
     prevTimestampMs = undefined;
   };
 
-  return { filter, reset };
+  return { filter, reset } satisfies OneEuroFilter;
 };
