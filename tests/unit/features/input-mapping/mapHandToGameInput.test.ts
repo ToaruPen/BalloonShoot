@@ -57,8 +57,16 @@ const createArmedRuntime = (
     first.runtime,
     tuning
   );
+  const third = mapHandToGameInput(
+    withThumbTriggerPose(frame, "open"),
+    canvasSize,
+    second.runtime,
+    tuning
+  );
 
-  return second.runtime;
+  expect(third.runtime.phase).toBe("armed");
+
+  return third.runtime;
 };
 
 const withGunPose = (inputFrame: HandFrame, active: boolean): HandFrame =>
@@ -103,6 +111,91 @@ const runIssue30Sequence = (
     steps.map(({ pose, gunPoseActive = true }) => createIssue30Frame(pose, gunPoseActive)),
     initialRuntime
   );
+
+interface Issue30ContractScenario {
+  name: string;
+  steps: Issue30FrameStep[];
+  initialRuntime?: GameInputFrame["runtime"];
+  assert: (results: GameInputFrame[]) => void;
+}
+
+const issue30ContractScenarios: Issue30ContractScenario[] = [
+  {
+    name: "one intentional pull emits exactly one shot",
+    steps: [
+      { pose: "open" },
+      { pose: "open" },
+      { pose: "pulled" },
+      { pose: "pulled" }
+    ],
+    assert: (results) => {
+      expect(results.filter((result) => result.shotFired)).toHaveLength(1);
+      expect(results[3]?.shotFired).toBe(true);
+    }
+  },
+  {
+    name: "held pull does not auto-repeat",
+    steps: [
+      { pose: "open" },
+      { pose: "open" },
+      { pose: "pulled" },
+      { pose: "pulled" },
+      { pose: "pulled" },
+      { pose: "pulled" }
+    ],
+    assert: (results) => {
+      expect(results.filter((result) => result.shotFired)).toHaveLength(1);
+      expect(results.at(-1)?.shotFired).toBe(false);
+    }
+  },
+  {
+    name: "brief thumb jitter does not emit",
+    steps: [
+      { pose: "open" },
+      { pose: "open" },
+      { pose: "pulled" },
+      { pose: "pulled" },
+      { pose: "open" },
+      { pose: "pulled" },
+      { pose: "pulled" }
+    ],
+    assert: (results) => {
+      expect(results.filter((result) => result.shotFired)).toHaveLength(1);
+      expect(results[4]?.triggerState).toBe("pulled");
+      expect(results[6]?.shotFired).toBe(false);
+    }
+  },
+  {
+    name: "brief pose drop does not instantly cancel a valid armed state",
+    steps: [
+      { pose: "open" },
+      { pose: "open" },
+      { pose: "pulled" },
+      { pose: "pulled", gunPoseActive: false },
+      { pose: "pulled" }
+    ],
+    assert: (results) => {
+      expect(results[3]?.gunPoseActive).toBe(true);
+      expect(results[4]?.gunPoseActive).toBe(true);
+      expect(results.filter((result) => result.shotFired)).toHaveLength(1);
+    }
+  },
+  {
+    name: "tracking reacquisition alone does not emit",
+    steps: [
+      { pose: "open" },
+      { pose: "open", gunPoseActive: false },
+      { pose: "pulled", gunPoseActive: false },
+      { pose: "pulled", gunPoseActive: false },
+      { pose: "pulled" }
+    ],
+    assert: (results) => {
+      expect(results[4]?.gunPoseActive).toBe(true);
+      expect(results[4]?.triggerState).toBe("pulled");
+      expect(results.filter((result) => result.shotFired)).toHaveLength(0);
+    }
+  }
+];
 
 describe("mapHandToGameInput", () => {
   it("builds hand evidence without conflating tracking presence with trigger state", () => {
@@ -255,107 +348,11 @@ describe("mapHandToGameInput", () => {
   });
 
   describe("issue-30 interaction contract", () => {
-    it("one intentional pull emits exactly one shot", () => {
-      const results = runIssue30Sequence([
-        { pose: "open" },
-        { pose: "open" },
-        { pose: "pulled" },
-        { pose: "pulled" }
-      ]);
+    it.each(issue30ContractScenarios)("$name", ({ steps, initialRuntime, assert }) => {
+      const results = runIssue30Sequence(steps, initialRuntime);
 
-      expect(results.filter((result) => result.shotFired)).toHaveLength(1);
-      expect(results[3]?.shotFired).toBe(true);
+      assert(results);
     });
-
-    it("held pull does not auto-repeat", () => {
-      const results = runIssue30Sequence([
-        { pose: "open" },
-        { pose: "open" },
-        { pose: "pulled" },
-        { pose: "pulled" },
-        { pose: "pulled" },
-        { pose: "pulled" }
-      ]);
-
-      expect(results.filter((result) => result.shotFired)).toHaveLength(1);
-      expect(results.at(-1)?.shotFired).toBe(false);
-    });
-
-    it("brief thumb jitter does not emit", () => {
-      const results = runIssue30Sequence([
-        { pose: "open" },
-        { pose: "open" },
-        { pose: "pulled" },
-        { pose: "pulled" },
-        { pose: "open" },
-        { pose: "pulled" },
-        { pose: "pulled" }
-      ]);
-
-      expect(results.filter((result) => result.shotFired)).toHaveLength(1);
-      expect(results[4]?.triggerState).toBe("pulled");
-      expect(results[6]?.shotFired).toBe(false);
-    });
-
-    it("brief pose drop does not instantly cancel a valid armed state", () => {
-      const results = runIssue30Sequence([
-        { pose: "open" },
-        { pose: "open" },
-        { pose: "pulled" },
-        { pose: "pulled", gunPoseActive: false },
-        { pose: "pulled" }
-      ]);
-
-      expect(results[3]?.gunPoseActive).toBe(true);
-      expect(results[4]?.gunPoseActive).toBe(true);
-      expect(results.filter((result) => result.shotFired)).toHaveLength(1);
-    });
-
-    it("tracking reacquisition alone does not emit", () => {
-      const results = runIssue30Sequence([
-        { pose: "open" },
-        { pose: "open", gunPoseActive: false },
-        { pose: "pulled", gunPoseActive: false },
-        { pose: "pulled", gunPoseActive: false },
-        { pose: "pulled" }
-      ]);
-
-      expect(results[4]?.gunPoseActive).toBe(true);
-      expect(results[4]?.triggerState).toBe("pulled");
-      expect(results.filter((result) => result.shotFired)).toHaveLength(0);
-    });
-  });
-
-  it("intentional single-shot: open -> stable pulled transition emits exactly once", () => {
-    const openFrame = frame;
-    const pulledFrame = withThumbTriggerPose(frame, "pulled");
-    const armedRuntime = createArmedRuntime();
-
-    const first = mapHandToGameInput(
-      openFrame,
-      canvasSize,
-      armedRuntime
-    );
-    const second = mapHandToGameInput(
-      pulledFrame,
-      canvasSize,
-      first.runtime
-    );
-    const third = mapHandToGameInput(
-      pulledFrame,
-      canvasSize,
-      second.runtime
-    );
-    const fourth = mapHandToGameInput(
-      pulledFrame,
-      canvasSize,
-      third.runtime
-    );
-
-    expect(first.shotFired).toBe(false);
-    expect(second.shotFired).toBe(false);
-    expect(third.shotFired).toBe(true);
-    expect(fourth.shotFired).toBe(false);
   });
 
   it("does not emit a shot on open -> pulled when gun pose is inactive", () => {
@@ -377,25 +374,6 @@ describe("mapHandToGameInput", () => {
 
     expect(nonGunOpen.shotFired).toBe(false);
     expect(nonGunPulled.shotFired).toBe(false);
-  });
-
-  it("tracking-loss/reacquisition non-fire: lost pose + reacquire does not generate a shot", () => {
-    const sequence = runInputSequence(
-      [
-        withGunPose(withThumbTriggerPose(frame, "open"), false),
-        withGunPose(withThumbTriggerPose(frame, "open"), false),
-        withGunPose(withThumbTriggerPose(frame, "pulled"), false),
-        withGunPose(withThumbTriggerPose(frame, "pulled"), false),
-        withThumbTriggerPose(frame, "pulled")
-      ],
-      createArmedRuntime()
-    );
-
-    expect(sequence[2]?.shotFired).toBe(false);
-    expect(sequence[3]?.shotFired).toBe(false);
-    expect(sequence[4]?.shotFired).toBe(false);
-    expect(sequence[4]?.gunPoseActive).toBe(true);
-    expect(sequence[4]?.triggerState).toBe("pulled");
   });
 
   it("clamps the mirrored crosshair to the canvas bounds", () => {
@@ -496,96 +474,46 @@ describe("mapHandToGameInput", () => {
     expect(results.at(-1)?.triggerState).toBe("open");
   });
 
-  it("fires once after the pull stays stable for two frames", () => {
-    const results = runInputSequence([
-      withThumbTriggerPose(frame, "open"),
-      withThumbTriggerPose(frame, "open"),
-      withThumbTriggerPose(frame, "pulled"),
-      withThumbTriggerPose(frame, "pulled")
-    ], createArmedRuntime());
-
-    expect(results[1]?.shotFired).toBe(false);
-    expect(results[2]?.shotFired).toBe(false);
-    expect(results[3]?.shotFired).toBe(true);
-  });
-
-  it("pose-drop tolerance: keep valid shot when gun pose drops for one frame during pull", () => {
-    const results = runInputSequence([
-      withGunPose(withThumbTriggerPose(frame, "open"), true),
-      withGunPose(withThumbTriggerPose(frame, "open"), true),
-      withGunPose(withThumbTriggerPose(frame, "pulled"), false),
-      withGunPose(withThumbTriggerPose(frame, "pulled"), true)
-    ], createArmedRuntime());
-
-    expect(results[3]?.shotFired).toBe(true);
-    expect(results[3]?.gunPoseActive).toBe(true);
-  });
-
-  it("hold suppression: no repeated shots while trigger stays held", () => {
-    const results = runInputSequence([
-      withThumbTriggerPose(frame, "open"),
-      withThumbTriggerPose(frame, "open"),
-      withThumbTriggerPose(frame, "pulled"),
-      withThumbTriggerPose(frame, "pulled"),
-      withThumbTriggerPose(frame, "pulled")
-    ], createArmedRuntime());
-
-    expect(results.filter((result) => result.shotFired)).toHaveLength(1);
-  });
-
-  it("jitter suppression: keep trigger latched through a single open-frame jitter", () => {
-    const results = runInputSequence([
-      withThumbTriggerPose(frame, "open"),
-      withThumbTriggerPose(frame, "pulled"),
-      withThumbTriggerPose(frame, "pulled"),
-      withThumbTriggerPose(frame, "open"),
-      withThumbTriggerPose(frame, "pulled")
-    ]);
-
-    expect(results[3]?.triggerState).toBe("pulled");
-    expect(results[4]?.shotFired).toBe(false);
-  });
-
-    it("requires a full open cycle before firing again after release", () => {
-      const results = runInputSequence(
-        [
-          withThumbTriggerPose(frame, "open"),
-          withThumbTriggerPose(frame, "open"),
-          withThumbTriggerPose(frame, "open"),
-          withThumbTriggerPose(frame, "pulled"),
-          withThumbTriggerPose(frame, "pulled"),
-          withThumbTriggerPose(frame, "open"),
-          withThumbTriggerPose(frame, "open"),
-          withThumbTriggerPose(frame, "open"),
-          withThumbTriggerPose(frame, "pulled"),
-          withThumbTriggerPose(frame, "pulled")
-        ],
-        createArmedRuntime()
-      );
+  it("requires a full open cycle before firing again after release", () => {
+    const results = runInputSequence(
+      [
+        withThumbTriggerPose(frame, "open"),
+        withThumbTriggerPose(frame, "open"),
+        withThumbTriggerPose(frame, "open"),
+        withThumbTriggerPose(frame, "pulled"),
+        withThumbTriggerPose(frame, "pulled"),
+        withThumbTriggerPose(frame, "open"),
+        withThumbTriggerPose(frame, "open"),
+        withThumbTriggerPose(frame, "open"),
+        withThumbTriggerPose(frame, "pulled"),
+        withThumbTriggerPose(frame, "pulled")
+      ],
+      createArmedRuntime()
+    );
 
     expect(results.filter((result) => result.shotFired)).toHaveLength(2);
     expect(results[9]?.shotFired).toBe(true);
   });
 
-    it("cold-start open-open-pulled-pulled does not fire", () => {
-      const coldStart = runInputSequence([
-        withThumbTriggerPose(frame, "open"),
-        withThumbTriggerPose(frame, "open"),
-        withThumbTriggerPose(frame, "pulled"),
-        withThumbTriggerPose(frame, "pulled")
-      ]);
-      const heldAtStart = runInputSequence([
-        withThumbTriggerPose(frame, "pulled"),
-        withThumbTriggerPose(frame, "pulled")
-      ]);
-      const noisyRelease = runInputSequence([
-        withThumbTriggerPose(frame, "pulled"),
-        withThumbTriggerPose(frame, "open"),
-        withThumbTriggerPose(frame, "pulled"),
-        withThumbTriggerPose(frame, "pulled")
-      ]);
-      expect(coldStart.some((result) => result.shotFired)).toBe(false);
-      expect(heldAtStart.some((result) => result.shotFired)).toBe(false);
-      expect(noisyRelease.some((result) => result.shotFired)).toBe(false);
-    });
+  it("cold-start open-open-pulled-pulled does not fire", () => {
+    const coldStart = runInputSequence([
+      withThumbTriggerPose(frame, "open"),
+      withThumbTriggerPose(frame, "open"),
+      withThumbTriggerPose(frame, "pulled"),
+      withThumbTriggerPose(frame, "pulled")
+    ]);
+    const heldAtStart = runInputSequence([
+      withThumbTriggerPose(frame, "pulled"),
+      withThumbTriggerPose(frame, "pulled")
+    ]);
+    const noisyRelease = runInputSequence([
+      withThumbTriggerPose(frame, "pulled"),
+      withThumbTriggerPose(frame, "open"),
+      withThumbTriggerPose(frame, "pulled"),
+      withThumbTriggerPose(frame, "pulled")
+    ]);
+    expect(coldStart.some((result) => result.shotFired)).toBe(false);
+    expect(heldAtStart.some((result) => result.shotFired)).toBe(false);
+    expect(noisyRelease.some((result) => result.shotFired)).toBe(false);
+  });
 });

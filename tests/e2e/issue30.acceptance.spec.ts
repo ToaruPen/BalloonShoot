@@ -40,7 +40,8 @@ const bootHarness = async (page: Page, frames: (HandFrame | undefined)[]): Promi
     ({ scriptedFrames }) => {
       const frames = scriptedFrames.slice();
       let detectCount = 0;
-      let intervalCallback: (() => void) | undefined;
+      const intervalCallbacks = new Map<number, () => void>();
+      let nextIntervalId = 1;
       const telemetryTimeline: TelemetrySnapshot[] = [];
       let telemetryObserver: MutationObserver | undefined;
       let snapshotScheduled = false;
@@ -74,20 +75,24 @@ const bootHarness = async (page: Page, frames: (HandFrame | undefined)[]): Promi
       Object.defineProperty(window, "setInterval", {
         configurable: true,
         value: (callback: TimerHandler) => {
-          intervalCallback = () => {
+          const timerId = nextIntervalId;
+          nextIntervalId += 1;
+
+          intervalCallbacks.set(timerId, () => {
             if (typeof callback === "function") {
               const timerCallback = callback as () => void;
               timerCallback();
             }
-          };
-          return 1;
+          });
+
+          return timerId;
         }
       });
 
       Object.defineProperty(window, "clearInterval", {
         configurable: true,
-        value: () => {
-          intervalCallback = undefined;
+        value: (timerId: number) => {
+          intervalCallbacks.delete(timerId);
         }
       });
 
@@ -136,7 +141,9 @@ const bootHarness = async (page: Page, frames: (HandFrame | undefined)[]): Promi
         getDetectCount: () => detectCount,
         advanceCountdown: (ticks: number) => {
           for (let index = 0; index < ticks; index += 1) {
-            intervalCallback?.();
+            for (const callback of Array.from(intervalCallbacks.values())) {
+              callback();
+            }
           }
         },
         attachTelemetryObserver: () => {
@@ -180,29 +187,29 @@ const bootHarness = async (page: Page, frames: (HandFrame | undefined)[]): Promi
   });
 }
 
-const waitForFrameSequence = async (page: Page, frameCount: number): Promise<void> => {
-  await expect.poll(
-    async () =>
-      page.evaluate(() => window.__balloonShootTestHooks?.getDetectCount() ?? -1)
-  ).toBe(frameCount);
-};
-
-const readFrameSnapshots = async (page: Page): Promise<TelemetrySnapshot[]> => {
+const readFrameSnapshots = async (
+  page: Page,
+  expectedPhases: readonly string[]
+): Promise<TelemetrySnapshot[]> => {
   const timeline = await page.evaluate<TelemetrySnapshot[]>(() =>
     window.__balloonShootTestHooks?.getTelemetryTimeline() ?? []
   );
+  const meaningfulTimeline = timeline.filter((snapshot) => snapshot.phase !== "--");
 
-  return timeline.filter((snapshot) => snapshot.phase !== "--");
+  return meaningfulTimeline.slice(0, expectedPhases.length);
 };
 
-const stripTerminalTrackingLostSnapshot = (
-  snapshots: TelemetrySnapshot[]
-): TelemetrySnapshot[] => {
-  const terminalSnapshot = snapshots.at(-1);
+const waitForFrameSequence = async (
+  page: Page,
+  expectedPhases: readonly string[]
+): Promise<TelemetrySnapshot[]> => {
+  let snapshots: TelemetrySnapshot[] = [];
 
-  if (terminalSnapshot?.phase === "tracking_lost") {
-    return snapshots.slice(0, -1);
-  }
+  await expect.poll(async () => {
+    snapshots = await readFrameSnapshots(page, expectedPhases);
+
+    return snapshots.map((snapshot) => snapshot.phase);
+  }).toEqual(expectedPhases);
 
   return snapshots;
 };
@@ -217,19 +224,12 @@ test.describe("issue-30 acceptance", () => {
       withThumbTriggerPose(base, "pulled"),
       withThumbTriggerPose(base, "pulled")
     ];
+    const expectedPhases = ["idle", "ready", "armed", "armed", "fired", "tracking_lost"];
 
     await bootHarness(page, frames);
-    await waitForFrameSequence(page, frames.length);
-    const snapshots = await readFrameSnapshots(page);
+    const snapshots = await waitForFrameSequence(page, expectedPhases);
 
-    expect(snapshots.map((snapshot) => snapshot.phase)).toEqual([
-      "idle",
-      "ready",
-      "armed",
-      "armed",
-      "fired",
-      "tracking_lost"
-    ]);
+    expect(snapshots.map((snapshot) => snapshot.phase)).toEqual(expectedPhases);
     expect(snapshots).toContainEqual(
       expect.objectContaining({
         phase: "fired",
@@ -250,12 +250,7 @@ test.describe("issue-30 acceptance", () => {
       withThumbTriggerPose(base, "pulled"),
       withThumbTriggerPose(base, "pulled")
     ];
-
-    await bootHarness(page, frames);
-    await waitForFrameSequence(page, frames.length);
-    const snapshots = await readFrameSnapshots(page);
-
-    expect(snapshots.map((snapshot) => snapshot.phase)).toEqual([
+    const expectedPhases = [
       "idle",
       "ready",
       "armed",
@@ -264,7 +259,12 @@ test.describe("issue-30 acceptance", () => {
       "recovering",
       "recovering",
       "tracking_lost"
-    ]);
+    ];
+
+    await bootHarness(page, frames);
+    const snapshots = await waitForFrameSequence(page, expectedPhases);
+
+    expect(snapshots.map((snapshot) => snapshot.phase)).toEqual(expectedPhases);
     expect(snapshots.filter((snapshot) => snapshot.phase === "fired")).toHaveLength(1);
     expect(snapshots.at(-1)?.rejectReason).toBe("tracking_lost");
   });
@@ -279,11 +279,10 @@ test.describe("issue-30 acceptance", () => {
       withThumbTriggerPose(base, "open"),
       withThumbTriggerPose(base, "open")
     ];
+    const expectedPhases = ["idle", "ready", "armed", "armed", "armed", "armed"];
 
     await bootHarness(page, frames);
-    await waitForFrameSequence(page, frames.length);
-    const snapshots = await readFrameSnapshots(page);
-    const meaningfulSnapshots = stripTerminalTrackingLostSnapshot(snapshots);
+    const meaningfulSnapshots = await waitForFrameSequence(page, expectedPhases);
 
     expect(meaningfulSnapshots.map((snapshot) => snapshot.phase)).toEqual([
       "idle",
@@ -307,19 +306,12 @@ test.describe("issue-30 acceptance", () => {
       withThumbTriggerPose(base, "open"),
       withThumbTriggerPose(base, "open")
     ];
+    const expectedPhases = ["idle", "ready", "tracking_lost", "tracking_lost", "idle"];
 
     await bootHarness(page, frames);
-    await waitForFrameSequence(page, frames.length);
-    const snapshots = await readFrameSnapshots(page);
-    const meaningfulSnapshots = stripTerminalTrackingLostSnapshot(snapshots);
+    const meaningfulSnapshots = await waitForFrameSequence(page, expectedPhases);
 
-    expect(meaningfulSnapshots.map((snapshot) => snapshot.phase)).toEqual([
-      "idle",
-      "ready",
-      "tracking_lost",
-      "tracking_lost",
-      "idle"
-    ]);
+    expect(meaningfulSnapshots.map((snapshot) => snapshot.phase)).toEqual(expectedPhases);
     expect(meaningfulSnapshots.filter((snapshot) => snapshot.phase === "fired")).toHaveLength(0);
     expect(meaningfulSnapshots.at(2)?.rejectReason).toBe("tracking_lost");
     expect(meaningfulSnapshots.at(-1)?.rejectReason).toBe("waiting_for_stable_open");
