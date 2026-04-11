@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DebugTelemetry } from "../../../../src/features/debug/createDebugPanel";
 import type { MediaPipeHandTrackerOptions } from "../../../../src/features/hand-tracking/createMediaPipeHandTracker";
-import type { HandFrame } from "../../../../src/shared/types/hand";
+import type { HandDetection, HandFrame } from "../../../../src/shared/types/hand";
 import {
+  asDetection,
   createThumbTriggerFrame,
   withThumbTriggerPose
 } from "../../features/input-mapping/thumbTriggerTestHelper";
@@ -11,7 +12,7 @@ interface ScriptedHandTracker {
   detect: (
     bitmap: ImageBitmap,
     frameAtMs: number
-  ) => Promise<HandFrame | undefined>;
+  ) => Promise<HandDetection | undefined>;
 }
 
 const {
@@ -198,7 +199,7 @@ const flushPromises = async (): Promise<void> => {
   await Promise.resolve();
 };
 
-const createScriptedHandFrames = () => [
+const createScriptedHandFrames = (): HandFrame[] => [
   withThumbTriggerPose(createThumbTriggerFrame("open"), "open"),
   withThumbTriggerPose(createThumbTriggerFrame("open"), "open"),
   withThumbTriggerPose(createThumbTriggerFrame("open"), "open"),
@@ -206,13 +207,16 @@ const createScriptedHandFrames = () => [
   withThumbTriggerPose(createThumbTriggerFrame("pulled"), "pulled")
 ];
 
-const createTrackingLossHandFrames = () => [
-  withThumbTriggerPose(createThumbTriggerFrame("open"), "open"),
-  withThumbTriggerPose(createThumbTriggerFrame("open"), "open"),
+const createScriptedHandDetections = (): HandDetection[] =>
+  createScriptedHandFrames().map(asDetection);
+
+const createTrackingLossHandDetections = (): (HandDetection | undefined)[] => [
+  asDetection(withThumbTriggerPose(createThumbTriggerFrame("open"), "open")),
+  asDetection(withThumbTriggerPose(createThumbTriggerFrame("open"), "open")),
   undefined,
   undefined,
-  withThumbTriggerPose(createThumbTriggerFrame("open"), "open"),
-  withThumbTriggerPose(createThumbTriggerFrame("open"), "open")
+  asDetection(withThumbTriggerPose(createThumbTriggerFrame("open"), "open")),
+  asDetection(withThumbTriggerPose(createThumbTriggerFrame("open"), "open"))
 ];
 
 const mockAudioAndCameraControllers = (
@@ -368,12 +372,12 @@ describe("startApp", () => {
   it("accepts a debug-only synthetic hand tracker factory for scripted frame sequences", async () => {
     const createHandTracker = vi.fn(() =>
       Promise.resolve<ScriptedHandTracker>({
-        detect: vi.fn(() => Promise.resolve(undefined as HandFrame | undefined))
+        detect: vi.fn(() => Promise.resolve(undefined as HandDetection | undefined))
       })
     );
-    const scriptedFrames = createScriptedHandFrames();
+    const scriptedDetections = createScriptedHandDetections();
     const scriptedTracker: ScriptedHandTracker = {
-      detect: vi.fn(() => Promise.resolve(scriptedFrames.shift()))
+      detect: vi.fn(() => Promise.resolve(scriptedDetections.shift()))
     };
 
     mockAudioAndCameraControllers(() =>
@@ -409,18 +413,18 @@ describe("startApp", () => {
     }
 
     expect(scriptedTracker.detect).toHaveBeenCalledTimes(5);
-    expect(scriptedFrames).toHaveLength(0);
+    expect(scriptedDetections).toHaveLength(0);
   });
 
   it("bridges mapper runtime telemetry into the debug panel without affecting gameplay flow", async () => {
     const createHandTracker = vi.fn(() =>
       Promise.resolve<ScriptedHandTracker>({
-        detect: vi.fn(() => Promise.resolve(undefined as HandFrame | undefined))
+        detect: vi.fn(() => Promise.resolve(undefined as HandDetection | undefined))
       })
     );
-    const scriptedFrames = createScriptedHandFrames();
+    const scriptedDetections = createScriptedHandDetections();
     const scriptedTracker: ScriptedHandTracker = {
-      detect: vi.fn(() => Promise.resolve(scriptedFrames.shift()))
+      detect: vi.fn(() => Promise.resolve(scriptedDetections.shift()))
     };
 
     mockAudioAndCameraControllers(() =>
@@ -476,12 +480,12 @@ describe("startApp", () => {
   it("hides the crosshair while tracking is lost and restores it after reacquisition", async () => {
     const createHandTracker = vi.fn(() =>
       Promise.resolve<ScriptedHandTracker>({
-        detect: vi.fn(() => Promise.resolve(undefined as HandFrame | undefined))
+        detect: vi.fn(() => Promise.resolve(undefined as HandDetection | undefined))
       })
     );
-    const scriptedFrames = createTrackingLossHandFrames();
+    const scriptedDetections = createTrackingLossHandDetections();
     const scriptedTracker: ScriptedHandTracker = {
-      detect: vi.fn(() => Promise.resolve(scriptedFrames.shift()))
+      detect: vi.fn(() => Promise.resolve(scriptedDetections.shift()))
     };
 
     createAudioControllerMock.mockReturnValue({
@@ -577,32 +581,16 @@ describe("startApp", () => {
       },
       "open"
     );
-    const scriptedFrames: (HandFrame | undefined)[] = [
-      firstFrame,
+    const scriptedDetections: (HandDetection | undefined)[] = [
+      asDetection(firstFrame),
       undefined,
-      reacquiredFrame
+      asDetection(reacquiredFrame)
     ];
-    let capturedOptions: MediaPipeHandTrackerOptions | undefined;
-    const detectMock = vi.fn(() => {
-      const frame = scriptedFrames.shift();
-
-      if (frame) {
-        capturedOptions?.onLandmarkTrace({
-          frameAtMs: 0,
-          rawFrame: frame,
-          filteredFrame: frame
-        });
-      }
-
-      return Promise.resolve(frame);
-    });
+    const detectMock = vi.fn(() => Promise.resolve(scriptedDetections.shift()));
     const scriptedTracker: ScriptedHandTracker = {
       detect: detectMock
     };
-    const createHandTracker = vi.fn((options: MediaPipeHandTrackerOptions) => {
-      capturedOptions = options;
-      return Promise.resolve(scriptedTracker);
-    });
+    const createHandTracker = vi.fn(() => Promise.resolve(scriptedTracker));
 
     mockAudioAndCameraControllers(() =>
       Promise.resolve({
@@ -662,7 +650,7 @@ describe("startApp", () => {
     expect(overlayRoot.innerHTML).toContain('data-screen="ready"');
   });
 
-  it("passes a live 1euro config closure and jitter trace sink to the tracker", async () => {
+  it("passes a live 1euro config closure and records raw-vs-filtered jitter from detections", async () => {
     mockAudioAndCameraControllers(() =>
       Promise.resolve({
         getTracks: () => [],
@@ -670,9 +658,26 @@ describe("startApp", () => {
       } as unknown as MediaStream)
     );
 
-    const scriptedFrames = createScriptedHandFrames();
+    const baseFrame = createThumbTriggerFrame("open");
+    const withIndexTipX = (frame: HandFrame, x: number): HandFrame => ({
+      ...frame,
+      landmarks: { ...frame.landmarks, indexTip: { x, y: 0.2, z: 0 } }
+    });
+
+    // Raw swings between 0.1 and 0.5 while the filtered side stays near 0.1 —
+    // mirrors what the 1€ filter produces when raw landmarks jitter.
+    const scriptedDetections: HandDetection[] = [
+      {
+        rawFrame: withIndexTipX(baseFrame, 0.1),
+        filteredFrame: withIndexTipX(baseFrame, 0.1)
+      },
+      {
+        rawFrame: withIndexTipX(baseFrame, 0.5),
+        filteredFrame: withIndexTipX(baseFrame, 0.15)
+      }
+    ];
     const scriptedTracker: ScriptedHandTracker = {
-      detect: vi.fn(() => Promise.resolve(scriptedFrames.shift()))
+      detect: vi.fn(() => Promise.resolve(scriptedDetections.shift()))
     };
     let capturedOptions: MediaPipeHandTrackerOptions | undefined;
     createMediaPipeHandTrackerMock.mockImplementation((options: MediaPipeHandTrackerOptions) => {
@@ -689,7 +694,6 @@ describe("startApp", () => {
 
     expect(createMediaPipeHandTrackerMock).toHaveBeenCalledTimes(1);
     expect(typeof capturedOptions?.getFilterConfig).toBe("function");
-    expect(typeof capturedOptions?.onLandmarkTrace).toBe("function");
 
     debugPanelInstance.values.handFilterMinCutoff = 3.0;
     debugPanelInstance.values.handFilterBeta = 0.04;
@@ -703,29 +707,19 @@ describe("startApp", () => {
     overlayRoot.click("start");
     await tickCountdown(3);
 
-    const baseFrame = createThumbTriggerFrame("open");
-    const withIndexTipX = (frame: HandFrame, x: number): HandFrame => ({
-      ...frame,
-      landmarks: { ...frame.landmarks, indexTip: { x, y: 0.2, z: 0 } }
-    });
+    // Cycle animation frames until processTrackingFrame has recorded both
+    // detections — the queue also carries the game-loop callback, which
+    // interleaves with the tracker loop. Bounded so a regression cannot hang.
+    const detectMock = scriptedTracker.detect as ReturnType<typeof vi.fn>;
+    for (
+      let attempts = 0;
+      detectMock.mock.calls.length < 2 && attempts < 20;
+      attempts += 1
+    ) {
+      await runNextAnimationFrame();
+    }
 
-    // Feed a raw-vs-filtered step change through the sink so the jitter
-    // trackers register a non-zero spread.
-    capturedOptions?.onLandmarkTrace({
-      frameAtMs: 0,
-      rawFrame: withIndexTipX(baseFrame, 0.1),
-      filteredFrame: withIndexTipX(baseFrame, 0.1)
-    });
-    capturedOptions?.onLandmarkTrace({
-      frameAtMs: 33,
-      rawFrame: withIndexTipX(baseFrame, 0.5),
-      filteredFrame: withIndexTipX(baseFrame, 0.15)
-    });
-
-    // Drive one tracking frame through the real processTrackingFrame loop so
-    // setTelemetry is called with the computed jitter values.
-    await runNextAnimationFrame(16);
-    await runNextAnimationFrame(33);
+    expect(detectMock.mock.calls.length).toBeGreaterThanOrEqual(2);
 
     const lastTelemetry = telemetryCalls.at(-1);
     expect(lastTelemetry?.rawIndexJitter).toBeGreaterThan(

@@ -1,5 +1,5 @@
 import { gameConfig } from "../../shared/config/gameConfig";
-import type { HandFrame } from "../../shared/types/hand";
+import type { HandDetection } from "../../shared/types/hand";
 import type { CrosshairPoint } from "./createCrosshairSmoother";
 import { buildHandEvidence, type HandEvidenceTuning } from "./createHandEvidence";
 import {
@@ -28,13 +28,13 @@ export interface InputTuning extends TriggerTuning {
 export { buildHandEvidence } from "./createHandEvidence";
 
 const resolveHandEvidence = (
-  frame: HandFrame | undefined,
+  detection: HandDetection | undefined,
   viewportSize: ViewportSize,
   runtime: InputRuntimeState | undefined,
   tuning: InputTuning
 ): ReturnType<typeof buildHandEvidence> =>
   buildHandEvidence(
-    frame,
+    detection,
     viewportSize,
     {
       crosshair: runtime?.crosshair,
@@ -82,12 +82,12 @@ const adaptGameInputFrame = (
 };
 
 export const mapHandToGameInput = (
-  frame: HandFrame | undefined,
+  detection: HandDetection | undefined,
   viewportSize: ViewportSize,
   runtime: InputRuntimeState | undefined,
   tuning: InputTuning = gameConfig.input
 ): GameInputFrame => {
-  const evidence = resolveHandEvidence(frame, viewportSize, runtime, tuning);
+  const evidence = resolveHandEvidence(detection, viewportSize, runtime, tuning);
   const intent = inferShotIntent(runtime, evidence);
 
   return adaptGameInputFrame(evidence, intent);

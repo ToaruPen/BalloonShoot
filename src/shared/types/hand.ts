@@ -31,3 +31,15 @@ export interface HandFrame {
     pinkyTip: Point3D;
   };
 }
+
+/**
+ * A successful hand detection carries both the raw landmark snapshot and the
+ * 1€-filtered version. Different downstream consumers need different time
+ * characteristics: crosshair and gun-pose evaluation benefit from the smoothed
+ * stream, while the transient trigger detection must stay on raw landmarks or
+ * the filter shaves away the pull peak.
+ */
+export interface HandDetection {
+  rawFrame: HandFrame;
+  filteredFrame: HandFrame;
+}

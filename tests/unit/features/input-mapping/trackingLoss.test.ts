@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createThumbTriggerFrame, withThumbTriggerPose } from "./thumbTriggerTestHelper";
+import { asDetection, createThumbTriggerFrame, withThumbTriggerPose } from "./thumbTriggerTestHelper";
 import { gameConfig } from "../../../../src/shared/config/gameConfig";
 import { mapHandToGameInput, type GameInputFrame } from "../../../../src/features/input-mapping/mapHandToGameInput";
 import {
@@ -63,10 +63,12 @@ const runSequence = (steps: Parameters<typeof createEvidence>[0][]): ReturnType<
 const canvasSize = { width: 1280, height: 720 };
 
 const createArmedRuntime = (): GameInputFrame["runtime"] => {
-  const openFrame = withThumbTriggerPose(createThumbTriggerFrame("open"), "open");
-  const first = mapHandToGameInput(openFrame, canvasSize, undefined, gameConfig.input);
-  const second = mapHandToGameInput(openFrame, canvasSize, first.runtime, gameConfig.input);
-  const third = mapHandToGameInput(openFrame, canvasSize, second.runtime, gameConfig.input);
+  const openDetection = asDetection(
+    withThumbTriggerPose(createThumbTriggerFrame("open"), "open")
+  );
+  const first = mapHandToGameInput(openDetection, canvasSize, undefined, gameConfig.input);
+  const second = mapHandToGameInput(openDetection, canvasSize, first.runtime, gameConfig.input);
+  const third = mapHandToGameInput(openDetection, canvasSize, second.runtime, gameConfig.input);
 
   return third.runtime;
 };

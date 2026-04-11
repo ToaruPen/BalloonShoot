@@ -1,4 +1,4 @@
-import type { HandFrame, Point3D } from "../../../../src/shared/types/hand";
+import type { HandDetection, HandFrame, Point3D } from "../../../../src/shared/types/hand";
 
 export type ThumbTriggerPose = "open" | "latched" | "pulled";
 
@@ -136,6 +136,11 @@ export const withThumbTriggerPose = (
       height: frame.height
     })
   }
+});
+
+export const asDetection = (frame: HandFrame): HandDetection => ({
+  rawFrame: frame,
+  filteredFrame: frame
 });
 
 export const mirrorThumbTriggerFrame = (frame: HandFrame): HandFrame => ({

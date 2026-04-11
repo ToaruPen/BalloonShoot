@@ -1,5 +1,6 @@
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 import type {
+  HandDetection,
   HandFrame,
   HandednessCategory,
   Point3D
@@ -28,18 +29,11 @@ interface MediaPipeHandTracker {
   detect(
     bitmap: ImageBitmap,
     frameAtMs: number
-  ): Promise<HandFrame | undefined>;
-}
-
-export interface LandmarkTrace {
-  frameAtMs: number;
-  rawFrame: HandFrame;
-  filteredFrame: HandFrame;
+  ): Promise<HandDetection | undefined>;
 }
 
 export interface MediaPipeHandTrackerOptions {
   getFilterConfig: () => OneEuroFilterConfig;
-  onLandmarkTrace: (trace: LandmarkTrace) => void;
 }
 
 const HAND_LANDMARK_INDEX = {
@@ -212,7 +206,7 @@ export const createMediaPipeHandTracker = async (
     detect(
       bitmap: ImageBitmap,
       frameAtMs: number
-    ): Promise<HandFrame | undefined> {
+    ): Promise<HandDetection | undefined> {
       const raw = toHandFrame(
         handLandmarker.detectForVideo(bitmap, frameAtMs),
         {
@@ -228,13 +222,7 @@ export const createMediaPipeHandTracker = async (
 
       const filtered = filterHandFrame(raw, filters, frameAtMs);
 
-      options.onLandmarkTrace({
-        frameAtMs,
-        rawFrame: raw,
-        filteredFrame: filtered
-      });
-
-      return Promise.resolve(filtered);
+      return Promise.resolve({ rawFrame: raw, filteredFrame: filtered });
     }
   };
 };

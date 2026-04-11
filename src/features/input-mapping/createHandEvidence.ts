@@ -1,5 +1,5 @@
 import { gameConfig } from "../../shared/config/gameConfig";
-import type { HandFrame } from "../../shared/types/hand";
+import type { HandDetection } from "../../shared/types/hand";
 import {
   smoothCrosshair,
   type CrosshairPoint
@@ -35,13 +35,13 @@ export interface HandEvidence {
 }
 
 export const buildHandEvidence = (
-  frame: HandFrame | undefined,
+  detection: HandDetection | undefined,
   viewportSize: ViewportSize,
   runtime: HandEvidenceRuntimeState | undefined,
   frameAtMs?: number,
   tuning: HandEvidenceTuning = gameConfig.input
 ): HandEvidence => {
-  if (!frame) {
+  if (!detection) {
     return {
       trackingPresent: false,
       frameAtMs,
@@ -51,9 +51,11 @@ export const buildHandEvidence = (
     };
   }
 
+  const { rawFrame, filteredFrame } = detection;
+
   const projectedCrosshair = projectLandmarkToViewport(
-    frame.landmarks.indexTip,
-    { width: frame.width, height: frame.height },
+    filteredFrame.landmarks.indexTip,
+    { width: filteredFrame.width, height: filteredFrame.height },
     viewportSize,
     { mirrorX: true }
   );
@@ -62,8 +64,8 @@ export const buildHandEvidence = (
     projectedCrosshair,
     tuning.smoothingAlpha
   );
-  const trigger = measureThumbTrigger(frame, runtime?.rawTriggerState, tuning);
-  const gunPose = measureGunPose(frame);
+  const trigger = measureThumbTrigger(rawFrame, runtime?.rawTriggerState, tuning);
+  const gunPose = measureGunPose(filteredFrame);
 
   return {
     trackingPresent: true,

@@ -69,10 +69,7 @@ vi.mock("@mediapipe/tasks-vision", () => ({
   HandLandmarker: { createFromOptions }
 }));
 
-import {
-  createMediaPipeHandTracker,
-  type LandmarkTrace
-} from "../../../../src/features/hand-tracking/createMediaPipeHandTracker";
+import { createMediaPipeHandTracker } from "../../../../src/features/hand-tracking/createMediaPipeHandTracker";
 
 const PASS_THROUGH_CONFIG = () => ({
   minCutoff: 1_000_000,
@@ -80,10 +77,8 @@ const PASS_THROUGH_CONFIG = () => ({
   dCutoff: 1_000_000
 });
 
-const NO_OP_TRACE = (): void => undefined;
-
 describe("createMediaPipeHandTracker", () => {
-  it("loads the hand landmarker and returns HandFrame results through detect", async () => {
+  it("loads the hand landmarker and returns a HandDetection with matching raw and filtered frames", async () => {
     createFromOptions.mockResolvedValueOnce({
       detectForVideo: vi.fn(() => ({
         landmarks: [BASE_LANDMARKS_FRAME_1],
@@ -101,23 +96,25 @@ describe("createMediaPipeHandTracker", () => {
     });
 
     const tracker = await createMediaPipeHandTracker({
-      getFilterConfig: PASS_THROUGH_CONFIG,
-      onLandmarkTrace: NO_OP_TRACE
+      getFilterConfig: PASS_THROUGH_CONFIG
     });
     const bitmap = { width: 640, height: 480 } as ImageBitmap;
 
-    await expect(tracker.detect(bitmap, 0)).resolves.toEqual(
-      createExpectedFrame({
-        handedness: [
-          {
-            score: 0.97,
-            index: 0,
-            categoryName: "Right",
-            displayName: "Right"
-          }
-        ]
-      })
-    );
+    const expectedFrame = createExpectedFrame({
+      handedness: [
+        {
+          score: 0.97,
+          index: 0,
+          categoryName: "Right",
+          displayName: "Right"
+        }
+      ]
+    });
+
+    await expect(tracker.detect(bitmap, 0)).resolves.toEqual({
+      rawFrame: expectedFrame,
+      filteredFrame: expectedFrame
+    });
 
     expect(forVisionTasks).toHaveBeenCalledWith(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"
@@ -135,15 +132,15 @@ describe("createMediaPipeHandTracker", () => {
     });
 
     const tracker = await createMediaPipeHandTracker({
-      getFilterConfig: PASS_THROUGH_CONFIG,
-      onLandmarkTrace: NO_OP_TRACE
+      getFilterConfig: PASS_THROUGH_CONFIG
     });
     const bitmap = { width: 640, height: 480 } as ImageBitmap;
 
-    const frame = await tracker.detect(bitmap, 0);
+    const detection = await tracker.detect(bitmap, 0);
 
-    expect(frame).toStrictEqual(createExpectedFrame());
-    expect(frame).not.toHaveProperty("handedness");
+    expect(detection?.rawFrame).toStrictEqual(createExpectedFrame());
+    expect(detection?.rawFrame).not.toHaveProperty("handedness");
+    expect(detection?.filteredFrame).not.toHaveProperty("handedness");
   });
 
   it("omits handedness when the tracker result includes an empty selected-hand array", async () => {
@@ -155,15 +152,14 @@ describe("createMediaPipeHandTracker", () => {
     });
 
     const tracker = await createMediaPipeHandTracker({
-      getFilterConfig: PASS_THROUGH_CONFIG,
-      onLandmarkTrace: NO_OP_TRACE
+      getFilterConfig: PASS_THROUGH_CONFIG
     });
     const bitmap = { width: 640, height: 480 } as ImageBitmap;
 
-    const frame = await tracker.detect(bitmap, 0);
+    const detection = await tracker.detect(bitmap, 0);
 
-    expect(frame).toStrictEqual(createExpectedFrame());
-    expect(frame).not.toHaveProperty("handedness");
+    expect(detection?.rawFrame).toStrictEqual(createExpectedFrame());
+    expect(detection?.rawFrame).not.toHaveProperty("handedness");
   });
 
   it("returns undefined when no hands are detected", async () => {
@@ -172,15 +168,14 @@ describe("createMediaPipeHandTracker", () => {
     });
 
     const tracker = await createMediaPipeHandTracker({
-      getFilterConfig: PASS_THROUGH_CONFIG,
-      onLandmarkTrace: NO_OP_TRACE
+      getFilterConfig: PASS_THROUGH_CONFIG
     });
     const bitmap = { width: 640, height: 480 } as ImageBitmap;
 
     await expect(tracker.detect(bitmap, 0)).resolves.toBeUndefined();
   });
 
-  it("smooths per-landmark x/y/z values between consecutive detect calls", async () => {
+  it("smooths per-landmark x/y/z values on the filtered frame while keeping raw untouched", async () => {
     const detectForVideo = vi
       .fn()
       .mockReturnValueOnce({ landmarks: [BASE_LANDMARKS_FRAME_1] })
@@ -191,21 +186,21 @@ describe("createMediaPipeHandTracker", () => {
     //   alpha = 1/(1 + (1/(2*pi*0.01))/0.033) ~= 0.00207
     // so frame 2 output ~= prev + 0.00207 * (raw - prev).
     const tracker = await createMediaPipeHandTracker({
-      getFilterConfig: () => ({ minCutoff: 0.01, beta: 0, dCutoff: 1.0 }),
-      onLandmarkTrace: NO_OP_TRACE
+      getFilterConfig: () => ({ minCutoff: 0.01, beta: 0, dCutoff: 1.0 })
     });
     const bitmap = { width: 640, height: 480 } as ImageBitmap;
 
     const first = await tracker.detect(bitmap, 0);
     const second = await tracker.detect(bitmap, 33);
 
-    expect(first?.landmarks.indexTip.x).toBeCloseTo(0.5);
-    expect(second?.landmarks.indexTip.x).toBeGreaterThan(0.5);
-    expect(second?.landmarks.indexTip.x).toBeLessThan(0.51);
-    expect(second?.landmarks.indexTip.y).toBeGreaterThan(0.6);
-    expect(second?.landmarks.indexTip.y).toBeLessThan(0.61);
-    expect(second?.landmarks.indexTip.z).toBeGreaterThan(0.7);
-    expect(second?.landmarks.indexTip.z).toBeLessThan(0.71);
+    expect(first?.filteredFrame.landmarks.indexTip.x).toBeCloseTo(0.5);
+    expect(second?.rawFrame.landmarks.indexTip.x).toBeCloseTo(0.6);
+    expect(second?.filteredFrame.landmarks.indexTip.x).toBeGreaterThan(0.5);
+    expect(second?.filteredFrame.landmarks.indexTip.x).toBeLessThan(0.51);
+    expect(second?.filteredFrame.landmarks.indexTip.y).toBeGreaterThan(0.6);
+    expect(second?.filteredFrame.landmarks.indexTip.y).toBeLessThan(0.61);
+    expect(second?.filteredFrame.landmarks.indexTip.z).toBeGreaterThan(0.7);
+    expect(second?.filteredFrame.landmarks.indexTip.z).toBeLessThan(0.71);
   });
 
   it("resets filter state when the hand leaves the frame so re-acquisition seeds fresh", async () => {
@@ -217,8 +212,7 @@ describe("createMediaPipeHandTracker", () => {
     createFromOptions.mockResolvedValueOnce({ detectForVideo });
 
     const tracker = await createMediaPipeHandTracker({
-      getFilterConfig: () => ({ minCutoff: 0.01, beta: 0, dCutoff: 1.0 }),
-      onLandmarkTrace: NO_OP_TRACE
+      getFilterConfig: () => ({ minCutoff: 0.01, beta: 0, dCutoff: 1.0 })
     });
     const bitmap = { width: 640, height: 480 } as ImageBitmap;
 
@@ -226,9 +220,9 @@ describe("createMediaPipeHandTracker", () => {
     await tracker.detect(bitmap, 33);
     const reacquired = await tracker.detect(bitmap, 66);
 
-    expect(reacquired?.landmarks.wrist.x).toBeCloseTo(0.2);
-    expect(reacquired?.landmarks.wrist.y).toBeCloseTo(0.3);
-    expect(reacquired?.landmarks.wrist.z).toBeCloseTo(0.4);
+    expect(reacquired?.filteredFrame.landmarks.wrist.x).toBeCloseTo(0.2);
+    expect(reacquired?.filteredFrame.landmarks.wrist.y).toBeCloseTo(0.3);
+    expect(reacquired?.filteredFrame.landmarks.wrist.z).toBeCloseTo(0.4);
   });
 
   it("re-reads getFilterConfig on every detect call so slider moves apply live", async () => {
@@ -241,8 +235,7 @@ describe("createMediaPipeHandTracker", () => {
     const config = { minCutoff: 0.01, beta: 0, dCutoff: 1.0 };
     const getFilterConfig = vi.fn(() => config);
     const tracker = await createMediaPipeHandTracker({
-      getFilterConfig,
-      onLandmarkTrace: NO_OP_TRACE
+      getFilterConfig
     });
     const bitmap = { width: 640, height: 480 } as ImageBitmap;
 
@@ -250,53 +243,7 @@ describe("createMediaPipeHandTracker", () => {
     config.minCutoff = 1_000_000;
     const relaxed = await tracker.detect(bitmap, 33);
 
-    expect(relaxed?.landmarks.indexTip.x).toBeCloseTo(0.6);
+    expect(relaxed?.filteredFrame.landmarks.indexTip.x).toBeCloseTo(0.6);
     expect(getFilterConfig.mock.calls.length).toBeGreaterThan(1);
-  });
-
-  it("emits a raw-vs-filtered indexTip trace on every successful detect", async () => {
-    const detectForVideo = vi
-      .fn()
-      .mockReturnValueOnce({ landmarks: [BASE_LANDMARKS_FRAME_1] })
-      .mockReturnValueOnce({ landmarks: [BASE_LANDMARKS_FRAME_2] });
-    createFromOptions.mockResolvedValueOnce({ detectForVideo });
-
-    const onLandmarkTrace = vi.fn<(trace: LandmarkTrace) => void>();
-    const tracker = await createMediaPipeHandTracker({
-      getFilterConfig: () => ({ minCutoff: 0.01, beta: 0, dCutoff: 1.0 }),
-      onLandmarkTrace
-    });
-    const bitmap = { width: 640, height: 480 } as ImageBitmap;
-
-    await tracker.detect(bitmap, 0);
-    await tracker.detect(bitmap, 33);
-
-    expect(onLandmarkTrace).toHaveBeenCalledTimes(2);
-    const secondCall = onLandmarkTrace.mock.calls[1]?.[0];
-    expect(secondCall).toBeDefined();
-
-    if (!secondCall) {
-      throw new Error("Expected a second landmark trace");
-    }
-
-    expect(secondCall.frameAtMs).toBe(33);
-    expect(secondCall.rawFrame.landmarks.indexTip.x).toBeCloseTo(0.6);
-    expect(secondCall.filteredFrame.landmarks.indexTip.x).toBeLessThan(0.51);
-  });
-
-  it("does not emit a trace when the frame is empty", async () => {
-    createFromOptions.mockResolvedValueOnce({
-      detectForVideo: vi.fn(() => ({ landmarks: [] }))
-    });
-    const onLandmarkTrace = vi.fn();
-    const tracker = await createMediaPipeHandTracker({
-      getFilterConfig: PASS_THROUGH_CONFIG,
-      onLandmarkTrace
-    });
-    const bitmap = { width: 640, height: 480 } as ImageBitmap;
-
-    await tracker.detect(bitmap, 0);
-
-    expect(onLandmarkTrace).not.toHaveBeenCalled();
   });
 });

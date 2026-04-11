@@ -10,6 +10,7 @@ import {
 import { gameConfig } from "../../../../src/shared/config/gameConfig";
 import type { HandFrame } from "../../../../src/shared/types/hand";
 import {
+  asDetection,
   createThumbTriggerFrame,
   type ThumbTriggerPose,
   withThumbTriggerPose
@@ -34,7 +35,7 @@ const runInputSequence = (
   let runtime = initialRuntime;
 
   for (const nextFrame of frames) {
-    const result = mapHandToGameInput(nextFrame, canvasSize, runtime);
+    const result = mapHandToGameInput(asDetection(nextFrame), canvasSize, runtime);
     results.push(result);
     runtime = result.runtime;
   }
@@ -46,19 +47,19 @@ const createArmedRuntime = (
   tuning: InputTuning = gameConfig.input
 ): GameInputFrame["runtime"] => {
   const first = mapHandToGameInput(
-    withThumbTriggerPose(frame, "open"),
+    asDetection(withThumbTriggerPose(frame, "open")),
     canvasSize,
     undefined,
     tuning
   );
   const second = mapHandToGameInput(
-    withThumbTriggerPose(frame, "open"),
+    asDetection(withThumbTriggerPose(frame, "open")),
     canvasSize,
     first.runtime,
     tuning
   );
   const third = mapHandToGameInput(
-    withThumbTriggerPose(frame, "open"),
+    asDetection(withThumbTriggerPose(frame, "open")),
     canvasSize,
     second.runtime,
     tuning
@@ -199,7 +200,7 @@ const issue30ContractScenarios: Issue30ContractScenario[] = [
 
 describe("mapHandToGameInput", () => {
   it("builds hand evidence without conflating tracking presence with trigger state", () => {
-    const evidence = buildHandEvidence(frame, canvasSize, undefined, 1234, gameConfig.input);
+    const evidence = buildHandEvidence(asDetection(frame), canvasSize, undefined, 1234, gameConfig.input);
 
     expect(evidence.trackingPresent).toBe(true);
     expect(evidence.frameAtMs).toBe(1234);
@@ -338,7 +339,7 @@ describe("mapHandToGameInput", () => {
   });
 
   it("maps the index finger to mirrored viewport coordinates", () => {
-    const result = mapHandToGameInput(frame, { width: 1280, height: 720 }, undefined);
+    const result = mapHandToGameInput(asDetection(frame), { width: 1280, height: 720 }, undefined);
     const crosshair = expectDefined(result.crosshair, "Expected crosshair");
 
     expect(crosshair.x).toBeCloseTo(640, 0);
@@ -359,13 +360,13 @@ describe("mapHandToGameInput", () => {
     const armedRuntime = createArmedRuntime();
 
     const nonGunOpen = mapHandToGameInput(
-      withGunPose(openThumbFrame, false),
+      asDetection(withGunPose(openThumbFrame, false)),
       canvasSize,
       armedRuntime
     );
 
     const nonGunPulled = mapHandToGameInput(
-      withGunPose(pulledThumbFrame, false),
+      asDetection(withGunPose(pulledThumbFrame, false)),
       canvasSize,
       nonGunOpen.runtime
     );
@@ -376,13 +377,13 @@ describe("mapHandToGameInput", () => {
 
   it("clamps the mirrored crosshair to the canvas bounds", () => {
     const result = mapHandToGameInput(
-      {
+      asDetection({
         ...frame,
         landmarks: {
           ...frame.landmarks,
           indexTip: { x: 1.2, y: -0.2, z: 0 }
         }
-      },
+      }),
       canvasSize,
       undefined
     );
@@ -393,15 +394,15 @@ describe("mapHandToGameInput", () => {
   });
 
   it("smooths crosshair motion instead of snapping raw coordinates", () => {
-    const first = mapHandToGameInput(frame, canvasSize, undefined);
+    const first = mapHandToGameInput(asDetection(frame), canvasSize, undefined);
     const second = mapHandToGameInput(
-      {
+      asDetection({
         ...frame,
         landmarks: {
           ...frame.landmarks,
           indexTip: { x: 0.8, y: 0.2, z: 0 }
         }
-      },
+      }),
       canvasSize,
       first.runtime
     );
@@ -426,28 +427,28 @@ describe("mapHandToGameInput", () => {
       triggerPullThreshold: 0.18,
       triggerReleaseThreshold: 0.1
     };
-    const first = mapHandToGameInput(frame, canvasSize, createArmedRuntime(tuning), tuning);
+    const first = mapHandToGameInput(asDetection(frame), canvasSize, createArmedRuntime(tuning), tuning);
     const second = mapHandToGameInput(
-      {
+      asDetection({
         ...frame,
         landmarks: {
           ...frame.landmarks,
           indexTip: { x: 0.8, y: 0.2, z: 0 },
           thumbTip: pulledFrame.landmarks.thumbTip
         }
-      },
+      }),
       canvasSize,
       first.runtime,
       tuning
     );
     const third = mapHandToGameInput(
-      latchedFrame,
+      asDetection(latchedFrame),
       canvasSize,
       second.runtime,
       tuning
     );
     const fourth = mapHandToGameInput(
-      latchedFrame,
+      asDetection(latchedFrame),
       canvasSize,
       third.runtime,
       tuning

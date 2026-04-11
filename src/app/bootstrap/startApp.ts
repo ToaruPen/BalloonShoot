@@ -8,9 +8,9 @@ import {
 import { createGameEngine, registerShot } from "../../features/gameplay/domain/createGameEngine";
 import {
   createMediaPipeHandTracker,
-  type MediaPipeHandTrackerOptions,
-  type LandmarkTrace
+  type MediaPipeHandTrackerOptions
 } from "../../features/hand-tracking/createMediaPipeHandTracker";
+import type { HandDetection } from "../../shared/types/hand";
 import type { OneEuroFilterConfig } from "../../features/hand-tracking/oneEuroFilter";
 import { createLandmarkJitterTracker } from "../../features/hand-tracking/landmarkJitter";
 import { measureThumbCosine } from "../../features/input-mapping/evaluateThumbTrigger";
@@ -180,7 +180,9 @@ export const startApp = (
   let latestRawTriggerProjection = 0;
   let latestFilterTriggerProjection = 0;
 
-  const resetTriggerProjections = (): void => {
+  const resetLandmarkMetrics = (): void => {
+    rawJitterTracker.reset();
+    filterJitterTracker.reset();
     latestRawTriggerProjection = 0;
     latestFilterTriggerProjection = 0;
   };
@@ -191,13 +193,13 @@ export const startApp = (
     dCutoff: gameConfig.input.handFilterDCutoff
   });
 
-  const handleLandmarkTrace = (trace: LandmarkTrace): void => {
-    const rawIndexTip = trace.rawFrame.landmarks.indexTip;
-    const filteredIndexTip = trace.filteredFrame.landmarks.indexTip;
+  const recordDetectionMetrics = (detection: HandDetection): void => {
+    const rawIndexTip = detection.rawFrame.landmarks.indexTip;
+    const filteredIndexTip = detection.filteredFrame.landmarks.indexTip;
     rawJitterTracker.push(rawIndexTip.x, rawIndexTip.y);
     filterJitterTracker.push(filteredIndexTip.x, filteredIndexTip.y);
-    latestRawTriggerProjection = measureThumbCosine(trace.rawFrame);
-    latestFilterTriggerProjection = measureThumbCosine(trace.filteredFrame);
+    latestRawTriggerProjection = measureThumbCosine(detection.rawFrame);
+    latestFilterTriggerProjection = measureThumbCosine(detection.filteredFrame);
   };
 
   const ctx = canvas.getContext("2d");
@@ -254,9 +256,7 @@ export const startApp = (
     trackerPromise = undefined;
     inputRuntime = undefined;
     trackedCrosshair = undefined;
-    rawJitterTracker.reset();
-    filterJitterTracker.reset();
-    resetTriggerProjections();
+    resetLandmarkMetrics();
     debugPanel.setTelemetry(undefined);
     engine = createGameEngine();
     state = createInitialAppState();
@@ -266,8 +266,7 @@ export const startApp = (
 
   const getTrackerPromise = (): ReturnType<typeof createHandTracker> => {
     trackerPromise ??= createHandTracker({
-      getFilterConfig,
-      onLandmarkTrace: handleLandmarkTrace
+      getFilterConfig
     }).catch((error: unknown) => {
       trackerPromise = undefined;
       throw error;
@@ -340,10 +339,16 @@ export const startApp = (
       const bitmap = await trackingCapture.grabFrame();
 
       try {
-        const handFrame = await tracker.detect(bitmap, frameAtMs);
+        const detection = await tracker.detect(bitmap, frameAtMs);
+
+        if (detection) {
+          recordDetectionMetrics(detection);
+        } else {
+          resetLandmarkMetrics();
+        }
 
         const input = mapHandToGameInput(
-          handFrame,
+          detection,
           { width: canvas.width, height: canvas.height },
           inputRuntime,
           debugPanel.values
@@ -363,9 +368,6 @@ export const startApp = (
         );
 
         if (input.runtime.phase === "tracking_lost") {
-          rawJitterTracker.reset();
-          filterJitterTracker.reset();
-          resetTriggerProjections();
           render();
         }
 
@@ -481,9 +483,7 @@ export const startApp = (
       stopGameLoop();
       inputRuntime = undefined;
       trackedCrosshair = undefined;
-      rawJitterTracker.reset();
-      filterJitterTracker.reset();
-      resetTriggerProjections();
+      resetLandmarkMetrics();
       debugPanel.setTelemetry(undefined);
       engine = createGameEngine();
       void audio?.startBgm().catch(logAudioPlaybackFailure("BGM"));
@@ -507,9 +507,7 @@ export const startApp = (
       publishCameraFeedStream(undefined);
       inputRuntime = undefined;
       trackedCrosshair = undefined;
-      rawJitterTracker.reset();
-      filterJitterTracker.reset();
-      resetTriggerProjections();
+      resetLandmarkMetrics();
       debugPanel.setTelemetry(undefined);
       engine = createGameEngine();
       state = nextState;
