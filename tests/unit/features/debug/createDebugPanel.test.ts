@@ -9,8 +9,24 @@ import {
 
 const sampleInitial: DebugValues = {
   smoothingAlpha: 0.28,
-  triggerPullThreshold: 0.18,
-  triggerReleaseThreshold: 0.1
+  extendedThreshold: 1.15,
+  curledThreshold: 0.65,
+  zAssistWeight: 0
+};
+
+const sampleTelemetry: DebugTelemetry = {
+  phase: "armed",
+  rejectReason: "waiting_for_stable_curled",
+  curlState: "curled",
+  rawCurlState: "partial",
+  curlConfidence: 0.67,
+  gunPoseConfidence: 0.91,
+  ratio: 0.74,
+  zDelta: 0.08,
+  extendedFrames: 2,
+  curledFrames: 1,
+  trackingPresentFrames: 4,
+  nonGunPoseFrames: 0
 };
 
 interface FakeInput extends DebugInputElement {
@@ -46,115 +62,113 @@ const createFakeOutput = (key: string): FakeOutput => ({
   textContent: ""
 });
 
-const sampleTelemetry: DebugTelemetry = {
-  phase: "armed",
-  rejectReason: "waiting_for_stable_pulled",
-  triggerConfidence: 0.67,
-  gunPoseConfidence: 0.91,
-  openFrames: 0,
-  pulledFrames: 1,
-  trackingPresentFrames: 4,
-  nonGunPoseFrames: 0
-};
-
 describe("createDebugPanel", () => {
-  it("starts with a copy of the initial values", () => {
+  it("starts with a copy of the curl debug values", () => {
     const panel = createDebugPanel(sampleInitial);
 
     expect(panel.values).toEqual(sampleInitial);
     expect(panel.values).not.toBe(sampleInitial);
   });
 
-  it("renders a labelled slider for every debug key with current values", () => {
+  it("renders every curl slider and telemetry output key", () => {
     const panel = createDebugPanel(sampleInitial);
 
     const html = panel.render();
 
     expect(html).toContain('class="debug-panel"');
     expect(html).toContain('data-debug="smoothingAlpha"');
-    expect(html).toContain('data-debug="triggerPullThreshold"');
-    expect(html).toContain('data-debug="triggerReleaseThreshold"');
+    expect(html).toContain('data-debug="extendedThreshold"');
+    expect(html).toContain('data-debug="curledThreshold"');
+    expect(html).toContain('data-debug="zAssistWeight"');
     expect(html).toContain('value="0.28"');
-    expect(html).toContain('value="0.18"');
-    expect(html).toContain('value="0.1"');
-    expect(html).toContain('min="0.05"');
-    expect(html).toContain('max="0.4"');
-    expect(html).toContain('min="0.02"');
-    expect(html).toContain('max="0.25"');
+    expect(html).toContain('value="1.15"');
+    expect(html).toContain('value="0.65"');
+    expect(html).toContain('value="0"');
+    expect(html).toContain('min="0.9"');
+    expect(html).toContain('max="1.6"');
+    expect(html).toContain('min="0.4"');
+    expect(html).toContain('max="0.9"');
+    expect(html).toContain('min="0"');
+    expect(html).toContain('max="0.1"');
     expect(html).toContain('data-debug-output="phase"');
     expect(html).toContain('data-debug-output="rejectReason"');
-    expect(html).toContain('data-debug-output="trigger"');
+    expect(html).toContain('data-debug-output="curlState"');
+    expect(html).toContain('data-debug-output="ratio"');
+    expect(html).toContain('data-debug-output="ratioStats"');
+    expect(html).toContain('data-debug-output="zDelta"');
     expect(html).toContain('data-debug-output="gunPose"');
     expect(html).toContain('data-debug-output="counters"');
   });
 
-  it("renders compact runtime telemetry into bound debug outputs", () => {
+  it("renders curl telemetry into bound debug outputs", () => {
     const panel = createDebugPanel(sampleInitial);
-    const phase = createFakeOutput("phase");
-    const rejectReason = createFakeOutput("rejectReason");
-    const trigger = createFakeOutput("trigger");
+    const curlState = createFakeOutput("curlState");
+    const ratio = createFakeOutput("ratio");
+    const ratioStats = createFakeOutput("ratioStats");
+    const zDelta = createFakeOutput("zDelta");
     const gunPose = createFakeOutput("gunPose");
     const counters = createFakeOutput("counters");
 
-    panel.bind([], [phase, rejectReason, trigger, gunPose, counters]);
+    panel.bind([], [curlState, ratio, ratioStats, zDelta, gunPose, counters]);
     panel.setTelemetry(sampleTelemetry);
 
-    expect(phase.textContent).toBe("armed");
-    expect(rejectReason.textContent).toBe("waiting_for_stable_pulled");
-    expect(trigger.textContent).toBe("0.67");
+    expect(curlState.textContent).toBe("curled (raw: partial)");
+    expect(ratio.textContent).toBe("0.74");
+    expect(ratioStats.textContent).toBe("min=0.74 med=0.74 max=0.74");
+    expect(zDelta.textContent).toBe("0.08");
     expect(gunPose.textContent).toBe("0.91");
-    expect(counters.textContent).toBe("open=0 pull=1 track=4 pose=0");
+    expect(counters.textContent).toBe("extended=2 curled=1 track=4 pose=0");
   });
 
-  it("updates values in place when bound inputs fire", () => {
+  it("updates curl debug values in place when bound inputs fire", () => {
     const panel = createDebugPanel(sampleInitial);
-    const smoothing = createFakeInput("smoothingAlpha", "0.28");
-    const pull = createFakeInput("triggerPullThreshold", "0.18");
-    const release = createFakeInput("triggerReleaseThreshold", "0.1");
+    const extended = createFakeInput("extendedThreshold", "1.15");
+    const curled = createFakeInput("curledThreshold", "0.65");
+    const zAssist = createFakeInput("zAssistWeight", "0");
 
-    panel.bind([smoothing, pull, release]);
+    panel.bind([extended, curled, zAssist]);
 
-    smoothing.value = "0.42";
-    smoothing.fireInput();
-    pull.value = "0.35";
-    pull.fireInput();
-    release.value = "0.08";
-    release.fireInput();
+    extended.value = "1.32";
+    extended.fireInput();
+    curled.value = "0.72";
+    curled.fireInput();
+    zAssist.value = "0.05";
+    zAssist.fireInput();
 
-    expect(panel.values.smoothingAlpha).toBeCloseTo(0.42);
-    expect(panel.values.triggerPullThreshold).toBeCloseTo(0.35);
-    expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.08);
+    expect(panel.values.extendedThreshold).toBeCloseTo(1.32);
+    expect(panel.values.curledThreshold).toBeCloseTo(0.72);
+    expect(panel.values.zAssistWeight).toBeCloseTo(0.05);
   });
 
-  it("keeps release at least one step below pull when either threshold changes", () => {
+  it("normalizes extendedThreshold upward after a curledThreshold input crosses the gap", () => {
     const panel = createDebugPanel(sampleInitial);
-    const pull = createFakeInput("triggerPullThreshold", "0.18");
-    const release = createFakeInput("triggerReleaseThreshold", "0.1");
+    const extended = createFakeInput("extendedThreshold", "1.15");
+    const curled = createFakeInput("curledThreshold", "0.65");
 
-    panel.bind([pull, release]);
+    panel.bind([extended, curled]);
 
-    release.value = "0.3";
-    release.fireInput();
-    expect(panel.values.triggerPullThreshold).toBeCloseTo(0.18);
-    expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.17);
-    expect(pull.value).toBe("0.18");
-    expect(release.value).toBe("0.17");
+    curled.value = "1.2";
+    curled.fireInput();
 
-    pull.value = "0.12";
-    pull.fireInput();
-    expect(panel.values.triggerPullThreshold).toBeCloseTo(0.12);
-    expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.11);
-    expect(pull.value).toBe("0.12");
-    expect(release.value).toBe("0.11");
+    expect(panel.values.curledThreshold).toBeCloseTo(0.9);
+    expect(panel.values.extendedThreshold).toBeGreaterThanOrEqual(
+      panel.values.curledThreshold + 0.05
+    );
+    expect(panel.values.extendedThreshold).toBeCloseTo(1.15);
+    expect(extended.value).toBe("1.15");
+    expect(curled.value).toBe("0.9");
   });
 
-  it("keeps the values reference stable so external loops can hold it", () => {
-    const panel = createDebugPanel(sampleInitial);
-    const ref = panel.values;
+  it("normalizes invalid initial curl thresholds", () => {
+    const panel = createDebugPanel({
+      smoothingAlpha: 0.28,
+      extendedThreshold: 0.95,
+      curledThreshold: 0.92,
+      zAssistWeight: 0
+    });
 
-    panel.bind([]);
-
-    expect(panel.values).toBe(ref);
+    expect(panel.values.extendedThreshold).toBeCloseTo(0.97);
+    expect(panel.values.curledThreshold).toBeCloseTo(0.9);
   });
 
   it("ignores inputs whose debug key is not a known DebugValues field", () => {
@@ -173,19 +187,21 @@ describe("createDebugPanel", () => {
 
     panel.bind([smoothing]);
 
-    smoothing.value = "not-a-number";
+    smoothing.value = "Infinity";
     smoothing.fireInput();
 
     expect(panel.values.smoothingAlpha).toBe(sampleInitial.smoothingAlpha);
+    expect(smoothing.value).toBe("Infinity");
   });
 
-  it("clamps out-of-range values to the slider bounds", () => {
+  it("clamps out-of-range values to the curl slider bounds", () => {
     const panel = createDebugPanel(sampleInitial);
     const smoothing = createFakeInput("smoothingAlpha", "0.28");
-    const pull = createFakeInput("triggerPullThreshold", "0.18");
-    const release = createFakeInput("triggerReleaseThreshold", "0.1");
+    const extended = createFakeInput("extendedThreshold", "1.15");
+    const curled = createFakeInput("curledThreshold", "0.65");
+    const zAssist = createFakeInput("zAssistWeight", "0");
 
-    panel.bind([smoothing, pull, release]);
+    panel.bind([smoothing, extended, curled, zAssist]);
 
     smoothing.value = "0.9";
     smoothing.fireInput();
@@ -195,35 +211,73 @@ describe("createDebugPanel", () => {
     smoothing.fireInput();
     expect(panel.values.smoothingAlpha).toBeCloseTo(0.1);
 
-    pull.value = "0.8";
-    pull.fireInput();
-    expect(panel.values.triggerPullThreshold).toBeCloseTo(0.4);
+    extended.value = "2";
+    extended.fireInput();
+    expect(panel.values.extendedThreshold).toBeCloseTo(1.6);
 
-    pull.value = "0.01";
-    pull.fireInput();
-    expect(panel.values.triggerPullThreshold).toBeCloseTo(0.05);
+    extended.value = "0.1";
+    extended.fireInput();
+    expect(panel.values.extendedThreshold).toBeCloseTo(0.9);
 
-    // Release clamps to its own max (0.25) and then to pull - gap (0.05 - 0.01).
-    pull.value = "0.05";
-    pull.fireInput();
-    release.value = "0.5";
-    release.fireInput();
-    expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.04);
+    curled.value = "2";
+    curled.fireInput();
+    expect(panel.values.curledThreshold).toBeCloseTo(0.9);
+    expect(panel.values.extendedThreshold).toBeCloseTo(0.95);
 
-    release.value = "0.01";
-    release.fireInput();
-    expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.02);
+    curled.value = "0.1";
+    curled.fireInput();
+    expect(panel.values.curledThreshold).toBeCloseTo(0.4);
+
+    zAssist.value = "1";
+    zAssist.fireInput();
+    expect(panel.values.zAssistWeight).toBeCloseTo(0.1);
+
+    zAssist.value = "-1";
+    zAssist.fireInput();
+    expect(panel.values.zAssistWeight).toBeCloseTo(0);
   });
 
-  it("clamps out-of-range initial values so untrusted config cannot render outside bounds", () => {
-    const panel = createDebugPanel({
-      smoothingAlpha: 0.05,
-      triggerPullThreshold: 0.06,
-      triggerReleaseThreshold: 0.25
-    });
+  it("computes ratioStats from telemetry ratio history", () => {
+    const panel = createDebugPanel(sampleInitial);
+    const ratioStats = createFakeOutput("ratioStats");
+    const baseTelemetry: DebugTelemetry = {
+      ...sampleTelemetry,
+      phase: "ready",
+      rejectReason: "waiting_for_fire_entry",
+      curlState: "extended",
+      rawCurlState: "extended",
+      zDelta: 0,
+      extendedFrames: 1,
+      curledFrames: 0,
+      trackingPresentFrames: 5,
+      nonGunPoseFrames: 0
+    };
 
-    expect(panel.values.smoothingAlpha).toBeCloseTo(0.1);
-    expect(panel.values.triggerPullThreshold).toBeCloseTo(0.06);
-    expect(panel.values.triggerReleaseThreshold).toBeCloseTo(0.05);
+    panel.bind([], [ratioStats]);
+    expect(ratioStats.textContent).toBe("min=-- med=-- max=--");
+
+    panel.setTelemetry({ ...baseTelemetry, ratio: 1 });
+    panel.setTelemetry({ ...baseTelemetry, ratio: 1.4 });
+    panel.setTelemetry({ ...baseTelemetry, ratio: 0.7 });
+
+    expect(ratioStats.textContent).toBe("min=0.70 med=1.00 max=1.40");
+  });
+
+  it("keeps zAssistWeight as a display-only value for this panel", () => {
+    const panel = createDebugPanel(sampleInitial);
+    const zAssist = createFakeInput("zAssistWeight", "0");
+    const curlState = createFakeOutput("curlState");
+    const ratio = createFakeOutput("ratio");
+
+    panel.bind([zAssist], [curlState, ratio]);
+    panel.setTelemetry(sampleTelemetry);
+
+    zAssist.value = "0.05";
+    zAssist.fireInput();
+
+    expect(panel.values.zAssistWeight).toBeCloseTo(0.05);
+    expect(curlState.textContent).toBe("curled (raw: partial)");
+    expect(ratio.textContent).toBe("0.74");
+    // D7/D8 keep zAssistWeight disconnected from curl judgement in this task.
   });
 });

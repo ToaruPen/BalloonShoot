@@ -1,7 +1,8 @@
 export interface DebugValues {
   smoothingAlpha: number;
-  triggerPullThreshold: number;
-  triggerReleaseThreshold: number;
+  extendedThreshold: number;
+  curledThreshold: number;
+  zAssistWeight: number;
 }
 
 export interface DebugInputElement {
@@ -19,10 +20,14 @@ export interface DebugOutputElement {
 export interface DebugTelemetry {
   phase: string;
   rejectReason: string;
-  triggerConfidence: number;
+  curlState: string;
+  rawCurlState: string;
+  curlConfidence: number;
   gunPoseConfidence: number;
-  openFrames: number;
-  pulledFrames: number;
+  ratio: number;
+  zDelta: number;
+  extendedFrames: number;
+  curledFrames: number;
   trackingPresentFrames: number;
   nonGunPoseFrames: number;
 }
@@ -44,33 +49,58 @@ interface DebugControlMeta {
   step: number;
 }
 
-type DebugOutputKey = "phase" | "rejectReason" | "trigger" | "gunPose" | "counters";
-
-const HYSTERESIS_GAP = 0.01;
+const HYSTERESIS_GAP = 0.05;
+const RATIO_HISTORY_LENGTH = 30;
 
 const DEBUG_KEYS = [
   "smoothingAlpha",
-  "triggerPullThreshold",
-  "triggerReleaseThreshold"
+  "extendedThreshold",
+  "curledThreshold",
+  "zAssistWeight"
 ] as const satisfies readonly (keyof DebugValues)[];
 
 const DEBUG_KEY_SET: ReadonlySet<string> = new Set(DEBUG_KEYS);
 
 const DEBUG_META: Record<keyof DebugValues, DebugControlMeta> = {
   smoothingAlpha: { label: "Smoothing", min: 0.1, max: 0.6, step: 0.01 },
-  triggerPullThreshold: { label: "Pull", min: 0.05, max: 0.4, step: 0.01 },
-  triggerReleaseThreshold: { label: "Release", min: 0.02, max: 0.25, step: 0.01 }
+  extendedThreshold: { label: "Extended", min: 0.9, max: 1.6, step: 0.01 },
+  curledThreshold: { label: "Curled", min: 0.4, max: 0.9, step: 0.01 },
+  zAssistWeight: {
+    label: "zAssist (display only)",
+    min: 0,
+    max: 0.1,
+    step: 0.005
+  }
 };
+
+type DebugOutputKey =
+  | "phase"
+  | "rejectReason"
+  | "curlState"
+  | "ratio"
+  | "ratioStats"
+  | "zDelta"
+  | "gunPose"
+  | "counters";
 
 const DEBUG_OUTPUT_META: Record<DebugOutputKey, string> = {
   phase: "Phase",
   rejectReason: "Reject",
-  trigger: "Trigger",
+  curlState: "Curl",
+  ratio: "Ratio",
+  ratioStats: "Ratio (min/med/max)",
+  zDelta: "zDelta",
   gunPose: "Pose",
   counters: "Counts"
 };
 
 const DEBUG_OUTPUT_KEYS = Object.keys(DEBUG_OUTPUT_META) as DebugOutputKey[];
+
+interface RatioStats {
+  min: number | undefined;
+  median: number | undefined;
+  max: number | undefined;
+}
 
 const isDebugKey = (key: string | undefined): key is keyof DebugValues =>
   key !== undefined && DEBUG_KEY_SET.has(key);
@@ -92,15 +122,35 @@ const countDecimals = (value: number): number => {
 const formatForInput = (key: keyof DebugValues, value: number): string =>
   String(Number(value.toFixed(countDecimals(DEBUG_META[key].step))));
 
-const formatConfidence = (value: number | undefined): string =>
+const formatRatio = (value: number | undefined): string =>
   Number.isFinite(value) ? Number(value).toFixed(2) : "--";
+
+const computeRatioStats = (history: number[]): RatioStats => {
+  if (history.length === 0) {
+    return { min: undefined, median: undefined, max: undefined };
+  }
+
+  const sorted = [...history].sort((a, b) => a - b);
+  return {
+    min: sorted[0],
+    max: sorted[sorted.length - 1],
+    median: sorted[Math.floor(sorted.length / 2)]
+  };
+};
 
 const formatTelemetryOutput = (
   key: DebugOutputKey,
-  telemetry: DebugTelemetry | undefined
+  telemetry: DebugTelemetry | undefined,
+  stats: RatioStats
 ): string => {
   if (!telemetry) {
-    return key === "counters" ? "open=0 pull=0 track=0 pose=0" : "--";
+    if (key === "counters") {
+      return "extended=0 curled=0 track=0 pose=0";
+    }
+    if (key === "ratioStats") {
+      return "min=-- med=-- max=--";
+    }
+    return "--";
   }
 
   switch (key) {
@@ -108,45 +158,77 @@ const formatTelemetryOutput = (
       return telemetry.phase;
     case "rejectReason":
       return telemetry.rejectReason;
-    case "trigger":
-      return formatConfidence(telemetry.triggerConfidence);
+    case "curlState":
+      return `${telemetry.curlState} (raw: ${telemetry.rawCurlState})`;
+    case "ratio":
+      return formatRatio(telemetry.ratio);
+    case "ratioStats":
+      return `min=${formatRatio(stats.min)} med=${formatRatio(stats.median)} max=${formatRatio(stats.max)}`;
+    case "zDelta":
+      return formatRatio(telemetry.zDelta);
     case "gunPose":
-      return formatConfidence(telemetry.gunPoseConfidence);
+      return formatRatio(telemetry.gunPoseConfidence);
     case "counters":
-      return `open=${String(telemetry.openFrames)} pull=${String(telemetry.pulledFrames)} track=${String(telemetry.trackingPresentFrames)} pose=${String(telemetry.nonGunPoseFrames)}`;
+      return `extended=${String(telemetry.extendedFrames)} curled=${String(telemetry.curledFrames)} track=${String(telemetry.trackingPresentFrames)} pose=${String(telemetry.nonGunPoseFrames)}`;
   }
 };
 
 const isDebugOutputKey = (key: string | undefined): key is DebugOutputKey =>
   key !== undefined && DEBUG_OUTPUT_KEYS.includes(key as DebugOutputKey);
 
-const normalizeTriggerThresholds = (
-  triggerPullThreshold: number,
-  triggerReleaseThreshold: number
-): Pick<DebugValues, "triggerPullThreshold" | "triggerReleaseThreshold"> => {
-  const normalizedPull = clampToMeta("triggerPullThreshold", triggerPullThreshold);
-  const normalizedRelease = clampToMeta("triggerReleaseThreshold", triggerReleaseThreshold);
+const normalizeCurlThresholds = (
+  extendedThreshold: number,
+  curledThreshold: number
+): Pick<DebugValues, "extendedThreshold" | "curledThreshold"> => {
+  const normalizedExtended = clampToMeta("extendedThreshold", extendedThreshold);
+  const normalizedCurled = clampToMeta("curledThreshold", curledThreshold);
 
   return {
-    triggerPullThreshold: normalizedPull,
-    triggerReleaseThreshold: Math.min(
-      normalizedRelease,
-      normalizedPull - HYSTERESIS_GAP
-    )
+    extendedThreshold: Math.max(
+      normalizedExtended,
+      normalizedCurled + HYSTERESIS_GAP
+    ),
+    curledThreshold: normalizedCurled
   };
+};
+
+const normalizeInitialCurlThresholds = (
+  extendedThreshold: number,
+  curledThreshold: number
+): Pick<DebugValues, "extendedThreshold" | "curledThreshold"> => {
+  const normalized = normalizeCurlThresholds(extendedThreshold, curledThreshold);
+
+  if (
+    Number.isFinite(extendedThreshold) &&
+    Number.isFinite(curledThreshold) &&
+    extendedThreshold <= curledThreshold + HYSTERESIS_GAP
+  ) {
+    return {
+      ...normalized,
+      extendedThreshold: Math.max(
+        normalized.extendedThreshold,
+        clampToMeta("extendedThreshold", curledThreshold + HYSTERESIS_GAP)
+      )
+    };
+  }
+
+  return normalized;
 };
 
 export const createDebugPanel = (initial: DebugValues): DebugPanel => {
   const values: DebugValues = {
     smoothingAlpha: clampToMeta("smoothingAlpha", initial.smoothingAlpha),
-    ...normalizeTriggerThresholds(
-      initial.triggerPullThreshold,
-      initial.triggerReleaseThreshold
+    zAssistWeight: clampToMeta("zAssistWeight", initial.zAssistWeight),
+    ...normalizeInitialCurlThresholds(
+      initial.extendedThreshold,
+      initial.curledThreshold
     )
   };
   const boundInputs: Partial<Record<keyof DebugValues, DebugInputElement>> = {};
   const boundOutputs: Partial<Record<DebugOutputKey, DebugOutputElement>> = {};
+  const ratioHistory: number[] = [];
   let telemetry: DebugTelemetry | undefined;
+  let stats = computeRatioStats(ratioHistory);
 
   const renderRow = (key: keyof DebugValues): string => {
     const meta = DEBUG_META[key];
@@ -157,7 +239,7 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
     const rows = DEBUG_KEYS.map(renderRow).join("");
     const telemetryRows = DEBUG_OUTPUT_KEYS.map(
       (key) =>
-        `<div class="debug-panel-row"><span>${DEBUG_OUTPUT_META[key]}</span><output data-debug-output="${key}">${formatTelemetryOutput(key, telemetry)}</output></div>`
+        `<div class="debug-panel-row"><span>${DEBUG_OUTPUT_META[key]}</span><output data-debug-output="${key}">${formatTelemetryOutput(key, telemetry, stats)}</output></div>`
     ).join("");
     return `<aside class="debug-panel" aria-label="debug controls">${rows}${telemetryRows}</aside>`;
   };
@@ -173,14 +255,14 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
   };
 
   const normalizeAndSyncThresholds = (): void => {
-    const normalized = normalizeTriggerThresholds(
-      values.triggerPullThreshold,
-      values.triggerReleaseThreshold
+    const normalized = normalizeCurlThresholds(
+      values.extendedThreshold,
+      values.curledThreshold
     );
-    values.triggerPullThreshold = normalized.triggerPullThreshold;
-    values.triggerReleaseThreshold = normalized.triggerReleaseThreshold;
-    syncInputValue("triggerPullThreshold");
-    syncInputValue("triggerReleaseThreshold");
+    values.extendedThreshold = normalized.extendedThreshold;
+    values.curledThreshold = normalized.curledThreshold;
+    syncInputValue("extendedThreshold");
+    syncInputValue("curledThreshold");
   };
 
   const syncTelemetryOutput = (key: DebugOutputKey): void => {
@@ -190,11 +272,19 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
       return;
     }
 
-    output.textContent = formatTelemetryOutput(key, telemetry);
+    output.textContent = formatTelemetryOutput(key, telemetry, stats);
   };
 
   const setTelemetry = (nextTelemetry: DebugTelemetry | undefined): void => {
     telemetry = nextTelemetry;
+
+    if (nextTelemetry && Number.isFinite(nextTelemetry.ratio)) {
+      ratioHistory.push(nextTelemetry.ratio);
+      if (ratioHistory.length > RATIO_HISTORY_LENGTH) {
+        ratioHistory.shift();
+      }
+      stats = computeRatioStats(ratioHistory);
+    }
 
     for (const key of DEBUG_OUTPUT_KEYS) {
       syncTelemetryOutput(key);
@@ -228,7 +318,7 @@ export const createDebugPanel = (initial: DebugValues): DebugPanel => {
         values[key] = clampToMeta(key, parsed);
         syncInputValue(key);
 
-        if (key === "triggerPullThreshold" || key === "triggerReleaseThreshold") {
+        if (key === "extendedThreshold" || key === "curledThreshold") {
           normalizeAndSyncThresholds();
         }
       });
