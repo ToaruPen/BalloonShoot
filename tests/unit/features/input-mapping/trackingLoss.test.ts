@@ -1,36 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { createThumbTriggerFrame, withThumbTriggerPose } from "./thumbTriggerTestHelper";
+import { createIndexCurlFrame } from "./indexCurlTestHelper";
 import { gameConfig } from "../../../../src/shared/config/gameConfig";
-import { mapHandToGameInput, type GameInputFrame } from "../../../../src/features/input-mapping/mapHandToGameInput";
+import {
+  mapHandToGameInput,
+  type GameInputFrame
+} from "../../../../src/features/input-mapping/mapHandToGameInput";
 import {
   advanceShotIntentState,
+  type ShotIntentResult,
   type ShotIntentState
 } from "../../../../src/features/input-mapping/shotIntentStateMachine";
 import type { HandEvidence } from "../../../../src/features/input-mapping/createHandEvidence";
-import type { TriggerState } from "../../../../src/features/input-mapping/evaluateThumbTrigger";
+import type { IndexCurlState } from "../../../../src/features/input-mapping/evaluateIndexCurl";
 
 const FIRE_ENTRY_GUN_POSE_CONFIDENCE = 0.55;
 
+interface EvidenceOptions {
+  trackingPresent?: boolean;
+  rawCurlState?: IndexCurlState;
+  gunPoseConfidence?: number;
+}
+
 const createEvidence = ({
   trackingPresent = true,
-  triggerState = "open",
+  rawCurlState = "extended",
   gunPoseConfidence = FIRE_ENTRY_GUN_POSE_CONFIDENCE
-}: {
-  trackingPresent?: boolean;
-  triggerState?: TriggerState;
-  gunPoseConfidence?: number;
-} = {}): HandEvidence => ({
+}: EvidenceOptions = {}): HandEvidence => ({
   trackingPresent,
   frameAtMs: undefined,
-  smoothedCrosshairCandidate: null,
-  trigger: trackingPresent
+  projectedCrosshairCandidate: trackingPresent ? { x: 0.5, y: 0.5 } : null,
+  curl: trackingPresent
     ? {
-        rawState: triggerState,
+        rawCurlState,
         confidence: 1,
         details: {
-          projection: 0.25,
-          pullThreshold: 0.18,
-          releaseThreshold: 0.1
+          ratio: rawCurlState === "extended" ? 1.4 : rawCurlState === "curled" ? 0.5 : 0.9,
+          zDelta: 0,
+          extendedThreshold: 1.15,
+          curledThreshold: 0.65,
+          curlHysteresisGap: 0.05
         }
       }
     : null,
@@ -39,16 +47,16 @@ const createEvidence = ({
         detected: gunPoseConfidence >= FIRE_ENTRY_GUN_POSE_CONFIDENCE,
         confidence: gunPoseConfidence,
         details: {
-          indexExtended: true,
-          curledFingerCount: 2,
-          curledThreshold: 0.25
+          indexExtended: false,
+          curledFingerCount: 3,
+          curledThreshold: 0.05
         }
       }
     : null
 });
 
-const runSequence = (steps: Parameters<typeof createEvidence>[0][]): ReturnType<typeof advanceShotIntentState>[] => {
-  const results: ReturnType<typeof advanceShotIntentState>[] = [];
+const runSequence = (steps: EvidenceOptions[]): ShotIntentResult[] => {
+  const results: ShotIntentResult[] = [];
   let state: ShotIntentState | undefined;
 
   for (const step of steps) {
@@ -63,7 +71,7 @@ const runSequence = (steps: Parameters<typeof createEvidence>[0][]): ReturnType<
 const canvasSize = { width: 1280, height: 720 };
 
 const createArmedRuntime = (): GameInputFrame["runtime"] => {
-  const openFrame = withThumbTriggerPose(createThumbTriggerFrame("open"), "open");
+  const openFrame = createIndexCurlFrame({ ratio: 1.4 });
   const first = mapHandToGameInput(openFrame, canvasSize, undefined, gameConfig.input);
   const second = mapHandToGameInput(openFrame, canvasSize, first.runtime, gameConfig.input);
   const third = mapHandToGameInput(openFrame, canvasSize, second.runtime, gameConfig.input);
@@ -72,56 +80,51 @@ const createArmedRuntime = (): GameInputFrame["runtime"] => {
 };
 
 describe("tracking loss", () => {
-  it("drops armed intent on tracking loss and requires a fresh open cycle after recovery", () => {
-    const [
-      first,
-      second,
-      third,
-      fourth,
-      fifth,
-      sixth,
-      seventh,
-      eighth,
-      ninth,
-      tenth,
-      eleventh
-    ] =
-      runSequence([
-        { triggerState: "open" },
-        { triggerState: "open" },
-        { triggerState: "open" },
-        { trackingPresent: false },
-        { triggerState: "open" },
-        { triggerState: "open" },
-        { triggerState: "open" },
-        { triggerState: "open" },
-        { triggerState: "open" },
-        { triggerState: "pulled" },
-        { triggerState: "pulled" }
-      ]);
+  it("drops armed intent on tracking loss and requires a fresh extended cycle after recovery", () => {
+    const results = runSequence([
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" }, // armed
+      { trackingPresent: false },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "extended" },
+      { rawCurlState: "partial" },
+      { rawCurlState: "curled" },
+      { rawCurlState: "curled" }
+    ]);
 
-    expect(first?.state.phase).toBe("idle");
-    expect(second?.state.phase).toBe("ready");
-    expect(third?.state.phase).toBe("armed");
-    expect(fourth?.state.phase).toBe("tracking_lost");
-    expect(fourth?.shotFired).toBe(false);
-    expect(fifth?.state.phase).toBe("tracking_lost");
-    expect(sixth?.state.phase).toBe("idle");
-    expect(seventh?.state.phase).toBe("ready");
-    expect(eighth?.state.phase).toBe("armed");
-    expect(ninth?.state.phase).toBe("armed");
-    expect(tenth?.state.phase).toBe("armed");
-    expect(eleventh?.state.phase).toBe("fired");
-    expect(eleventh?.shotFired).toBe(true);
+    expect(results[0]?.state.phase).toBe("idle");
+    expect(results[1]?.state.phase).toBe("ready");
+    expect(results[2]?.state.phase).toBe("armed");
+    expect(results[3]?.state.phase).toBe("tracking_lost");
+    expect(results[3]?.shotFired).toBe(false);
+    expect(results[3]?.crosshairLockAction).toBe("release");
+    // Tracking recovers — state machine needs fresh extended cycle before arming again.
+    expect(results[4]?.state.phase).toBe("tracking_lost");
+    expect(results[5]?.state.phase).toBe("idle");
+    expect(results[6]?.state.phase).toBe("ready");
+    expect(results[7]?.state.phase).toBe("armed");
+    // A freshly observed partial after the new armed state produces freeze.
+    expect(results[9]?.crosshairLockAction).toBe("freeze");
+    // 2-frame curled confirmation fires.
+    expect(results[11]?.state.phase).toBe("fired");
+    expect(results[11]?.shotFired).toBe(true);
   });
 
-  it("turns missing tracking into tracking_lost and clears the crosshair", () => {
+  it("turns missing tracking into tracking_lost, clears the crosshair, and releases the lock", () => {
     const result = mapHandToGameInput(undefined, canvasSize, createArmedRuntime());
 
     expect(result.runtime.phase).toBe("tracking_lost");
     expect(result.runtime.rejectReason).toBe("tracking_lost");
     expect(result.shotFired).toBe(false);
     expect(result.crosshair).toBeUndefined();
-    expect(result.runtime.crosshair).toBeUndefined();
+    expect(result.crosshairLockAction).toBe("release");
+    expect(result.runtime.lockedCrosshair).toBeUndefined();
+    expect(result.runtime.rawCurlState).toBe("partial");
+    expect(result.runtime.curledFrames).toBe(0);
+    expect(result.runtime.extendedFrames).toBe(0);
   });
 });

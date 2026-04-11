@@ -134,7 +134,7 @@ export const mapHandToGameInput = (
   const nextRuntime: InputRuntimeState = {
     ...baseRuntime,
     rawCurlState:
-      evidence.curl?.rawCurlState ?? runtime?.rawCurlState ?? intent.state.rawCurlState,
+      evidence.curl?.rawCurlState ?? intent.state.rawCurlState,
     ...(nextLastExtendedCrosshair === undefined
       ? {}
       : { lastExtendedCrosshair: nextLastExtendedCrosshair }),
