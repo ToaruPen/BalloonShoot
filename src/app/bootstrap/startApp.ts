@@ -153,7 +153,6 @@ export const startApp = (
     debugRoot.querySelectorAll<HTMLElement>("[data-debug-output]")
   );
 
-
   const ctx = canvas.getContext("2d");
 
   if (!ctx) {
@@ -413,15 +412,16 @@ export const startApp = (
         return;
       }
 
-      state = nextState;
-      stopGameLoop();
-      inputRuntime = undefined;
-      trackedCrosshair = undefined;
-      engine = createGameEngine();
-      void audio?.startBgm().catch(logAudioPlaybackFailure("BGM"));
-      startTrackerLoop();
-      startCountdown();
-      return;
+    state = nextState;
+    stopGameLoop();
+    inputRuntime = undefined;
+    trackedCrosshair = undefined;
+    debugPanel.setTelemetry(undefined);
+    engine = createGameEngine();
+    void audio?.startBgm().catch(logAudioPlaybackFailure("BGM"));
+    startTrackerLoop();
+    startCountdown();
+    return;
     }
 
     if (event.type === "RETRY_CLICKED") {
@@ -439,6 +439,7 @@ export const startApp = (
       publishCameraFeedStream(undefined);
       inputRuntime = undefined;
       trackedCrosshair = undefined;
+      debugPanel.setTelemetry(undefined);
       engine = createGameEngine();
       state = nextState;
       render();

@@ -199,6 +199,7 @@ describe("startApp", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    telemetryCalls.length = 0;
 
     let nextAnimationFrameId = 1;
     animationFrameCallbacks = [];
